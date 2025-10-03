@@ -166,70 +166,113 @@ class QuantumDiscreteGaussian:
         """Plot the results showing parameter variations and probability distributions"""
         means, variances = self.compute_parameters()
         
-        # Create subplots
-        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(12, 10))
+        # Create subplots - 2x2 layout
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(16, 12))
         
-        # Plot 1: Parameter variations
+        # Plot 1: Parameter variations with improved dual y-axes
         x_points = np.arange(self.grid_size)
-        ax1.plot(x_points, means, 'b-o', label='Mean μ(x)')
+        
+        # Left y-axis for mean (blue)
+        color1 = 'tab:blue'
+        ax1.plot(x_points, means, color=color1, marker='o', linewidth=2, markersize=6, label='Mean μ(x)')
         ax1.set_xlabel('Grid Point')
-        ax1.set_ylabel('Mean μ')
-        ax1.set_title('Mean Variation (Sine Wave)')
-        ax1.grid(True)
-        ax1.legend()
+        ax1.set_ylabel('Mean μ(x)', color=color1, fontweight='bold')
+        ax1.tick_params(axis='y', labelcolor=color1)
+        ax1.grid(True, alpha=0.3)
+        ax1.set_ylim([min(means)*1.1, max(means)*1.1])  # Add some margin
         
-        ax2.plot(x_points, variances, 'r-o', label='Variance T(x)')
-        ax2.axhline(y=self.T0, color='gray', linestyle='--', alpha=0.7, label=f'Base T₀={self.T0:.3f}')
-        ax2.set_xlabel('Grid Point')
-        ax2.set_ylabel('Variance T')
-        ax2.set_title('Variance Variation (Sine Wave)')
-        ax2.grid(True)
-        ax2.legend()
+        # Right y-axis for variance (red)
+        ax1_twin = ax1.twinx()
+        color2 = 'tab:red'
+        ax1_twin.plot(x_points, variances, color=color2, marker='s', linewidth=2, markersize=6, label='Variance T(x)')
+        ax1_twin.axhline(y=self.T0, color='gray', linestyle='--', alpha=0.7, label=f'Base T₀={self.T0:.3f}')
+        ax1_twin.set_ylabel('Variance T(x)', color=color2, fontweight='bold')
+        ax1_twin.tick_params(axis='y', labelcolor=color2)
+        ax1_twin.set_ylim([min(variances)*0.95, max(variances)*1.05])  # Add some margin
         
-        # Plot 3: Probability distributions
-        prob_matrix = np.zeros((self.grid_size, 3))
+        # Title and combined legend
+        ax1.set_title('Spatially Varying Parameters (Dual Y-Axes)', fontweight='bold')
+        
+        # Combine legends
+        lines1, labels1 = ax1.get_legend_handles_labels()
+        lines2, labels2 = ax1_twin.get_legend_handles_labels()
+        ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left', framealpha=0.9)
+        
+        # Prepare probability data for plots
+        prob_matrix_quantum = np.zeros((self.grid_size, 3))
+        prob_matrix_theoretical = np.zeros((self.grid_size, 3))
+        
         for i in range(self.grid_size):
+            # Quantum empirical probabilities
             total_shots = sum(results[i].values())
-            prob_matrix[i, 0] = results[i][-1] / total_shots  # P(-1)
-            prob_matrix[i, 1] = results[i][0] / total_shots   # P(0)
-            prob_matrix[i, 2] = results[i][1] / total_shots   # P(1)
+            prob_matrix_quantum[i, 0] = results[i][-1] / total_shots  # P(-1)
+            prob_matrix_quantum[i, 1] = results[i][0] / total_shots   # P(0)
+            prob_matrix_quantum[i, 2] = results[i][1] / total_shots   # P(1)
+            
+            # Theoretical probabilities
+            theoretical_probs = self.classical_discrete_gaussian_probs(means[i], variances[i])
+            prob_matrix_theoretical[i, :] = theoretical_probs
         
-        im = ax3.imshow(prob_matrix.T, aspect='auto', cmap='viridis', origin='lower')
+        # Plot 2: Line plots of all probabilities across grid
+        colors = ['red', 'green', 'blue']
+        markers = ['o', 's', '^']
+        outcomes = ['-1', '0', '+1']
+        
+        for j, (outcome, color, marker) in enumerate(zip(outcomes, colors, markers)):
+            # Theoretical lines (solid)
+            ax2.plot(x_points, prob_matrix_theoretical[:, j], 
+                    color=color, linestyle='-', linewidth=2.5, 
+                    label=f'Theory P({outcome})', alpha=0.8)
+            
+            # Quantum empirical points and lines (dashed)
+            ax2.plot(x_points, prob_matrix_quantum[:, j], 
+                    color=color, linestyle='--', linewidth=2, 
+                    marker=marker, markersize=6, markerfacecolor='white',
+                    label=f'Quantum P({outcome})', alpha=0.9)
+        
+        ax2.set_xlabel('Grid Point')
+        ax2.set_ylabel('Probability')
+        ax2.set_title('Theoretical vs Quantum Probabilities Across Grid')
+        ax2.grid(True, alpha=0.3)
+        ax2.legend(loc='upper left', bbox_to_anchor=(1.02, 1), ncol=1)
+        ax2.set_ylim(0, 1)
+        
+        # Plot 3: Heatmap of quantum empirical probabilities
+        im = ax3.imshow(prob_matrix_quantum.T, aspect='auto', cmap='viridis', 
+                       origin='lower', vmin=0, vmax=1)
         ax3.set_xlabel('Grid Point')
         ax3.set_ylabel('Outcome')
-        ax3.set_title('Empirical Probability Distribution')
+        ax3.set_title('Quantum Empirical Probability Heatmap')
         ax3.set_yticks([0, 1, 2])
-        ax3.set_yticklabels(['-1', '0', '1'])
+        ax3.set_yticklabels(['-1', '0', '+1'])
         plt.colorbar(im, ax=ax3, label='Probability')
         
-        # Plot 4: Theoretical vs Empirical comparison for middle point
-        mid_point = self.grid_size // 2
-        mu_mid = means[mid_point]
-        sigma_sq_mid = variances[mid_point]
+        # Plot 4: Error analysis across grid
+        errors = np.zeros(self.grid_size)
+        for i in range(self.grid_size):
+            # Calculate total variation distance at each point
+            error = 0.5 * np.sum(np.abs(prob_matrix_theoretical[i, :] - prob_matrix_quantum[i, :]))
+            errors[i] = error
         
-        theoretical_probs = self.classical_discrete_gaussian_probs(mu_mid, sigma_sq_mid)
-        total_shots_mid = sum(results[mid_point].values())
-        empirical_probs = [
-            results[mid_point][-1] / total_shots_mid,
-            results[mid_point][0] / total_shots_mid,
-            results[mid_point][1] / total_shots_mid
-        ]
-        
-        x_pos = np.arange(3)
-        width = 0.35
-        
-        ax4.bar(x_pos - width/2, theoretical_probs, width, label='Theoretical', alpha=0.7)
-        ax4.bar(x_pos + width/2, empirical_probs, width, label='Quantum Empirical', alpha=0.7)
-        ax4.set_xlabel('Outcome')
-        ax4.set_ylabel('Probability')
-        ax4.set_title(f'Comparison at Grid Point {mid_point}')
-        ax4.set_xticks(x_pos)
-        ax4.set_xticklabels(['-1', '0', '1'])
-        ax4.legend()
+        ax4.plot(x_points, errors, 'mo-', linewidth=2, markersize=8, 
+                label=f'TVD Error (Mean: {np.mean(errors):.4f})')
+        ax4.set_xlabel('Grid Point')
+        ax4.set_ylabel('Total Variation Distance')
+        ax4.set_title('Quantum vs Theoretical Error Across Grid')
         ax4.grid(True, alpha=0.3)
+        ax4.legend()
+        
+        # Add overall statistics
+        mean_error = np.mean(errors)
+        max_error = np.max(errors)
+        ax4.axhline(y=mean_error, color='orange', linestyle='--', alpha=0.7, 
+                   label=f'Mean Error: {mean_error:.4f}')
+        ax4.text(0.02, 0.95, f'Max Error: {max_error:.4f}\nMean Error: {mean_error:.4f}', 
+                transform=ax4.transAxes, verticalalignment='top',
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgray", alpha=0.7))
         
         plt.tight_layout()
-        plt.savefig('/tmp/quantum_gaussian_grid/results.png', dpi=300, bbox_inches='tight')
+        plt.savefig('results_improved.png', dpi=300, bbox_inches='tight')
         plt.show()
 
 def main():
