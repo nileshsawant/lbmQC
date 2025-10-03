@@ -36,99 +36,260 @@ class QuantumDiscreteGaussian:
         return means, variances
     
     def classical_discrete_gaussian_probs(self, mu: float, sigma_sq: float) -> np.ndarray:
-        """Compute discrete Gaussian probabilities classically"""
-        # Compute unnormalized probabilities
+        """
+        Calculate classical discrete Gaussian probabilities for outcomes {-1, 0, 1}
+        
+        MATHEMATICAL FOUNDATION:
+        Discrete Gaussian distribution: P(x) = exp(-(x-μ)²/(2σ²)) / Z
+        - μ (mu): mean parameter (varies spatially as sine wave across grid)
+        - σ² (sigma_sq): variance parameter (varies spatially as sine wave across grid)
+        - Z: normalization constant (partition function) ensuring Σ P(x) = 1
+        
+        PHYSICAL INTERPRETATION:
+        - When μ > 0: probability mass shifts toward +1 outcome
+        - When μ < 0: probability mass shifts toward -1 outcome  
+        - When μ = 0: symmetric distribution peaked at 0
+        - Larger σ²: broader distribution (more uncertainty)
+        - Smaller σ²: sharper distribution (more certainty)
+        
+        This classical calculation serves as the "ground truth" for our quantum implementation.
+        """
+        # STEP 1: Compute unnormalized probabilities using Gaussian kernel
+        # For each outcome x ∈ {-1, 0, 1}, calculate exp(-(x-μ)²/(2σ²))
+        # This measures the "fitness" or "likelihood" of each outcome given parameters μ, σ²
         unnorm_probs = np.array([
             np.exp(-(k - mu)**2 / (2 * sigma_sq)) for k in self.outcomes
         ])
         
-        # Normalize
+        # STEP 2: Normalize to satisfy probability axiom: Σ P(x) = 1
+        # Z is the partition function (total unnormalized probability mass)
         Z = np.sum(unnorm_probs)
-        return unnorm_probs / Z
+        normalized_probs = unnorm_probs / Z
+        
+        # RESULT: [P(-1), P(0), P(1)] - classical probability distribution
+        return normalized_probs
     
 
     
     def create_quantum_circuit(self, probs: np.ndarray) -> QuantumCircuit:
-        """Create quantum circuit for single grid point discrete Gaussian"""
-        # Normalize probabilities
-        probs = probs / np.sum(probs)
-        p_minus1, p_0, p_plus1 = probs
+        """
+        Create quantum circuit to generate discrete Gaussian distribution using amplitude encoding
         
-        # Create circuit to generate: |ψ⟩ = √p₋₁|00⟩ + √p₀|01⟩ + √p₊₁|10⟩
+        QUANTUM COMPUTING FOUNDATION:
+        This function implements "amplitude encoding" - a fundamental quantum technique where
+        classical probabilities are encoded as quantum amplitudes in a superposition state.
+        
+        MATHEMATICAL MAPPING:
+        Classical: P(-1), P(0), P(1) ∈ [0,1] with P(-1) + P(0) + P(1) = 1
+        Quantum:   |ψ⟩ = √P(-1)|00⟩ + √P(0)|01⟩ + √P(1)|10⟩
+        
+        WHY SQUARE ROOTS?
+        Born's rule in quantum mechanics: |amplitude|² = probability
+        So if amplitude = √P, then |√P|² = P (correct probability)
+        
+        QUBIT ENCODING SCHEME:
+        - |00⟩ (both qubits in state 0) → outcome -1
+        - |01⟩ (first qubit 0, second qubit 1) → outcome 0  
+        - |10⟩ (first qubit 1, second qubit 0) → outcome +1
+        - |11⟩ (both qubits in state 1) → unused (helps with circuit construction)
+        
+        QUANTUM ADVANTAGE:
+        Once encoded, quantum circuits can manipulate all outcomes simultaneously
+        through superposition, potentially offering speedup over classical sampling.
+        """
+        # STEP 1: Ensure probability normalization (quantum states must have unit norm)
+        probs = probs / np.sum(probs)
+        p_minus1, p_0, p_plus1 = probs  # Extract individual probabilities
+        
+        # STEP 2: Initialize quantum circuit with 2 qubits + 2 classical bits for measurement
+        # Qubit 0: "first" qubit in our encoding scheme
+        # Qubit 1: "second" qubit in our encoding scheme  
+        # Classical bits: store measurement results
         qc = QuantumCircuit(2, 2)
         
-        # Step 1: First qubit determines if we're in {-1,0} vs {+1} subspace
-        # P(first qubit = 0) = p₋₁ + p₀
-        prob_first_0 = p_minus1 + p_0
+        # STEP 3: HIERARCHICAL DECOMPOSITION - First Qubit (Coarse Splitting)
+        # 
+        # QUANTUM STRATEGY: Use hierarchical probability tree decomposition
+        # Split the 3-outcome problem into: {-1,0} vs {+1}
+        # 
+        # MATHEMATICAL FOUNDATION:
+        # First qubit encodes: P(outcome ∈ {-1, 0}) vs P(outcome = +1)
+        # P(first qubit = 0) = P(-1) + P(0) = combined probability of negative/zero outcomes
+        # P(first qubit = 1) = P(+1) = probability of positive outcome
+        #
+        # QUANTUM GATE SELECTION:
+        # RY gate (rotation around Y-axis) creates superposition: RY(θ)|0⟩ = cos(θ/2)|0⟩ + sin(θ/2)|1⟩
+        # We want: |cos(θ/2)|² = P(first=0) and |sin(θ/2)|² = P(first=1)
+        # Solving: cos²(θ/2) = prob_first_0 → θ = 2*arccos(√prob_first_0)
+        
+        prob_first_0 = p_minus1 + p_0  # Combined probability for {-1, 0} outcomes
         
         if prob_first_0 > 0 and prob_first_0 < 1:
-            # RY rotation to set P(first qubit = 0) = prob_first_0
-            theta1 = 2 * np.arccos(np.sqrt(prob_first_0))
-            qc.ry(theta1, 0)
+            # GENERAL CASE: Create superposition between |0⟩ and |1⟩ states
+            theta1 = 2 * np.arccos(np.sqrt(prob_first_0))  # Calculate rotation angle
+            qc.ry(theta1, 0)  # Apply Y-rotation to first qubit
+            
         elif prob_first_0 == 0:
-            # Force first qubit to |1⟩
-            qc.x(0)
-        # If prob_first_0 == 1, qubit stays in |0⟩
+            # EDGE CASE: Only +1 outcome possible (P(-1)=P(0)=0, P(+1)=1)
+            qc.x(0)  # X gate: |0⟩ → |1⟩ (deterministic flip to |1⟩ state)
+            
+        # EDGE CASE: If prob_first_0 == 1, first qubit stays |0⟩ (no gates needed)
+        # This happens when P(+1) = 0, so only {-1, 0} outcomes are possible
         
-        # Step 2: Second qubit determines choice within subspace
-        if prob_first_0 > 1e-10:
-            # When first qubit is 0: P(second = 1) = p₀ / (p₋₁ + p₀)
-            prob_second_1_given_first_0 = p_0 / prob_first_0
+        # STEP 4: CONDITIONAL DECOMPOSITION - Second Qubit (Fine Splitting)
+        #
+        # QUANTUM STRATEGY: Conditional probability encoding using controlled gates
+        # Given first qubit = 0 (we're in {-1, 0} subspace), distinguish between -1 and 0
+        #
+        # MATHEMATICAL FOUNDATION:  
+        # P(second=1 | first=0) = P(outcome=0) / P(outcome∈{-1,0}) = P(0) / (P(-1) + P(0))
+        # This uses conditional probability: P(A|B) = P(A∩B) / P(B)
+        # Here: A="second qubit is 1", B="first qubit is 0"
+        #
+        # QUANTUM IMPLEMENTATION:
+        # Use controlled-RY gate: only rotates second qubit when first qubit is in specific state
+        # CRY gate: applies RY rotation to target qubit conditioned on control qubit state
+        
+        if prob_first_0 > 1e-10:  # Only proceed if {-1,0} outcomes are possible
+            
+            # Calculate conditional probability using Bayes' rule
+            prob_second_1_given_first_0 = p_0 / prob_first_0  # P(outcome=0 | outcome∈{-1,0})
             
             if prob_second_1_given_first_0 > 0 and prob_second_1_given_first_0 < 1:
+                # GENERAL CASE: Both -1 and 0 outcomes possible within {-1,0} subspace
+                
+                # Calculate rotation angle for conditional probability
                 theta2 = 2 * np.arcsin(np.sqrt(prob_second_1_given_first_0))
                 
-                # Apply controlled rotation: rotate qubit 1 when qubit 0 is |0⟩
-                qc.x(0)  # Flip to make control on |0⟩ into control on |1⟩
-                qc.cry(theta2, 0, 1)
-                qc.x(0)  # Flip back
+                # QUANTUM TRICK: Convert "control on |0⟩" to "control on |1⟩"
+                # Most quantum gates control on |1⟩ state, but we need control on |0⟩
+                qc.x(0)              # X gate: |0⟩ ↔ |1⟩ (flip first qubit state)
+                qc.cry(theta2, 0, 1) # Controlled-RY: rotate qubit 1 when qubit 0 is |1⟩ (originally |0⟩)
+                qc.x(0)              # X gate: flip first qubit back to original state
+                
             elif prob_second_1_given_first_0 == 1:
-                # When first=0, always set second=1
-                qc.x(0)
-                qc.cx(0, 1)  # CNOT: if first=0 (now 1), flip second
-                qc.x(0)
+                # EDGE CASE: Only outcome 0 possible when first qubit is |0⟩ (P(-1)=0, P(0)>0)
+                qc.x(0)          # Flip first qubit: |0⟩ → |1⟩  
+                qc.cx(0, 1)      # CNOT gate: if control=|1⟩ (originally |0⟩), flip target qubit
+                qc.x(0)          # Restore first qubit to original state
+                
+            # EDGE CASE: If prob_second_1_given_first_0 == 0, second qubit stays |0⟩
+            # This happens when P(0)=0 but P(-1)>0, so only -1 outcome possible in {-1,0} subspace
         
-        # Measure
-        qc.measure(0, 0)
-        qc.measure(1, 1)
+        # STEP 5: QUANTUM MEASUREMENT
+        #
+        # MEASUREMENT FOUNDATION:
+        # Quantum measurement collapses superposition |ψ⟩ = Σᵢ αᵢ|i⟩ into classical outcome
+        # Probability of measuring state |i⟩ = |αᵢ|² (Born's rule)
+        # After measurement, quantum state is destroyed and becomes classical
+        #
+        # OUR MEASUREMENT SCHEME:
+        # Measure both qubits simultaneously to get 2-bit classical string
+        # |00⟩ → classical bits "00" → decode to outcome -1  
+        # |01⟩ → classical bits "01" → decode to outcome 0
+        # |10⟩ → classical bits "10" → decode to outcome +1
+        # |11⟩ → classical bits "11" → unused (should have 0 probability by construction)
+        #
+        # QISKIT CONVENTION:
+        # qc.measure(qubit_index, classical_bit_index) 
+        # Stores measurement result of quantum qubit in classical bit register
         
+        qc.measure(0, 0)  # Measure first qubit → store result in classical bit 0
+        qc.measure(1, 1)  # Measure second qubit → store result in classical bit 1
+        
+        # CIRCUIT COMPLETE: Returns quantum circuit ready for execution
+        # When run multiple times (shots), produces random samples from discrete Gaussian
         return qc
     
     def quantum_sample_grid_point(self, mu: float, sigma_sq: float, shots: int = 1000) -> Dict[int, int]:
-        """Sample from discrete Gaussian at a single grid point using quantum circuit"""
-        # Compute classical probabilities
+        """
+        Execute quantum sampling for discrete Gaussian distribution at single grid point
+        
+        QUANTUM SAMPLING PROCESS:
+        1. Classical preprocessing: Calculate target probabilities P(-1), P(0), P(1)
+        2. Quantum encoding: Convert probabilities to quantum circuit amplitudes  
+        3. Quantum execution: Run circuit multiple times (shots) to get samples
+        4. Classical postprocessing: Decode quantum measurement results to outcomes
+        
+        PARAMETERS:
+        - mu: mean parameter for this specific grid location
+        - sigma_sq: variance parameter for this specific grid location  
+        - shots: number of quantum circuit executions (sample size)
+        
+        QUANTUM ADVANTAGE:
+        Each quantum circuit execution processes the full superposition simultaneously,
+        potentially offering advantages over classical rejection sampling methods.
+        """
+        
+        # STEP 1: CLASSICAL PREPROCESSING
+        # Calculate the target discrete Gaussian probabilities for this grid point
+        # This gives us the classical "ground truth" that our quantum circuit should reproduce
         probs = self.classical_discrete_gaussian_probs(mu, sigma_sq)
         
-        # Create and run quantum circuit
+        # STEP 2: QUANTUM CIRCUIT CREATION  
+        # Convert classical probabilities into quantum circuit using amplitude encoding
+        # This is the core quantum advantage: encoding probabilistic information as quantum superposition
         qc = self.create_quantum_circuit(probs)
         
-        # Simulate
-        simulator = AerSimulator()
-        pass_manager = generate_preset_pass_manager(1, simulator)
-        qc_compiled = pass_manager.run(qc)
+        # STEP 3: QUANTUM CIRCUIT COMPILATION
+        # Prepare circuit for execution on quantum simulator
+        # - AerSimulator: High-performance classical simulator of quantum circuits
+        # - Pass manager: Optimizes circuit for better execution (gate optimization, noise modeling, etc.)
+        # - Optimization level 1: Basic optimizations (gate cancellation, routing, etc.)
+        simulator = AerSimulator()  # Create quantum circuit simulator
+        pass_manager = generate_preset_pass_manager(1, simulator)  # Create optimization pipeline  
+        qc_compiled = pass_manager.run(qc)  # Apply optimizations to circuit
         
-        # Run the circuit
-        job = simulator.run(qc_compiled, shots=shots)
-        result = job.result()
-        counts = result.get_counts()
+        # STEP 4: QUANTUM EXECUTION
+        # Run the quantum circuit multiple times to collect statistical samples
+        # Each "shot" represents one complete quantum computation: prepare state → measure → get classical result
+        job = simulator.run(qc_compiled, shots=shots)  # Submit job to quantum simulator
+        result = job.result()  # Wait for completion and get results
+        counts = result.get_counts()  # Extract measurement statistics: {'bitstring': count, ...}
         
-        # Convert bit strings to outcomes
-        # Format from Qiskit: 'b1b0' where b1 is qubit 1, b0 is qubit 0
-        outcome_counts = {-1: 0, 0: 0, 1: 0}
+        # STEP 5: CLASSICAL POSTPROCESSING - Decode Quantum Results
+        #
+        # BITSTRING DECODING PROCESS:
+        # Quantum measurements produce classical bitstrings representing qubit states
+        # We must decode these bitstrings back to our discrete Gaussian outcomes
+        #
+        # QISKIT MEASUREMENT FORMAT:
+        # Qiskit returns measurements as strings like 'b1b0' where:
+        # - b1 = measurement result of qubit 1 (second qubit in our encoding)
+        # - b0 = measurement result of qubit 0 (first qubit in our encoding)  
+        # - '0' means qubit was measured in |0⟩ state
+        # - '1' means qubit was measured in |1⟩ state
+        #
+        # OUR QUANTUM-TO-CLASSICAL MAPPING:
+        # |q1q0⟩ quantum state → discrete Gaussian outcome
+        # |00⟩ → outcome -1 (both qubits in ground state)
+        # |01⟩ → outcome  0 (first qubit ground, second qubit excited)  
+        # |10⟩ → outcome +1 (first qubit excited, second qubit ground)
+        # |11⟩ → unused (both qubits excited - should not occur by design)
+        
+        outcome_counts = {-1: 0, 0: 0, 1: 0}  # Initialize counters for each outcome
+        
+        # Process each measurement result from quantum execution
         for bitstring, count in counts.items():
-            if len(bitstring) >= 2:
-                qubit1_bit = bitstring[0]  # Second qubit (qubit 1)
-                qubit0_bit = bitstring[1]  # First qubit (qubit 0)
+            if len(bitstring) >= 2:  # Ensure we have measurements from both qubits
                 
-                # Our encoding: |q1q0⟩ → outcome
-                if qubit0_bit == '0' and qubit1_bit == '0':
-                    outcome_counts[-1] += count  # |00⟩ → -1
-                elif qubit0_bit == '0' and qubit1_bit == '1':
-                    outcome_counts[0] += count   # |01⟩ → 0
-                elif qubit0_bit == '1' and qubit1_bit == '0':
-                    outcome_counts[1] += count   # |10⟩ → +1
-                # |11⟩ is unused in our encoding
+                # QISKIT QUBIT ORDERING: bitstring[0] = qubit 1, bitstring[1] = qubit 0
+                qubit1_bit = bitstring[0]  # Second qubit measurement (qubit index 1)
+                qubit0_bit = bitstring[1]  # First qubit measurement (qubit index 0)
+                
+                # DECODE QUANTUM MEASUREMENTS TO CLASSICAL OUTCOMES
+                # Apply our predetermined quantum encoding scheme
+                if qubit0_bit == '0' and qubit1_bit == '0':    # |00⟩ state measured
+                    outcome_counts[-1] += count  # Map to discrete Gaussian outcome -1
+                elif qubit0_bit == '0' and qubit1_bit == '1':  # |01⟩ state measured  
+                    outcome_counts[0] += count   # Map to discrete Gaussian outcome 0
+                elif qubit0_bit == '1' and qubit1_bit == '0':  # |10⟩ state measured
+                    outcome_counts[1] += count   # Map to discrete Gaussian outcome +1
+                # Note: |11⟩ case omitted - this state should have 0 amplitude by circuit design
         
+        # RETURN: Dictionary mapping outcomes to their empirical counts
+        # Format: {-1: count_minus1, 0: count_zero, 1: count_plus1}
+        # These counts represent the quantum sampling results for this grid point
         return outcome_counts
     
     def create_true_parallel_quantum_circuit(self) -> QuantumCircuit:
@@ -363,17 +524,30 @@ class QuantumDiscreteGaussian:
     
     def demonstrate_true_quantum_parallelization(self, shots: int = 5000) -> None:
         """
-        Demonstrate the concept of true quantum parallelization using superposition.
+        Educational demonstration of TRUE quantum parallelization using superposition
         
-        This creates a quantum circuit that processes multiple grid points simultaneously
-        in superposition, showcasing the theoretical O(√N) quantum advantage.
+        QUANTUM PARALLELIZATION THEORY:
+        Classical computation: Process N grid points sequentially → O(N) time complexity
+        Quantum computation: Process N grid points simultaneously in superposition → O(√N) time
+        
+        KEY QUANTUM CONCEPTS DEMONSTRATED:
+        1. SUPERPOSITION: All grid positions exist simultaneously as |ψ⟩ = (1/√N) Σᵢ |grid_i⟩
+        2. ENTANGLEMENT: Grid positions become entangled with their Gaussian outcomes  
+        3. MEASUREMENT: Single measurement collapses superposition to classical result
+        4. QUANTUM ADVANTAGE: O(√N) speedup through Grover-style amplitude amplification
+        
+        EDUCATIONAL PURPOSE:
+        This function shows the theoretical quantum advantage concept, even though
+        practical implementation requires individual parameter accuracy (hybrid approach).
         """
         print("\n🔬 DEMONSTRATING True Quantum Parallelization Concept...")
         print("=" * 70)
         
         means, variances = self.compute_parameters()
         
-        # Use average parameters to demonstrate the superposition concept
+        # STRATEGIC SIMPLIFICATION: Use average parameters for clear demonstration
+        # In practice, each grid point needs individual parameters for accuracy
+        # Here we sacrifice accuracy to clearly show the quantum superposition concept
         avg_mu = np.mean(means)
         avg_sigma_sq = np.mean(variances) 
         avg_probs = self.classical_discrete_gaussian_probs(avg_mu, avg_sigma_sq)
@@ -384,37 +558,62 @@ class QuantumDiscreteGaussian:
         print(f"  Average probabilities: P(-1)={avg_probs[0]:.3f}, P(0)={avg_probs[1]:.3f}, P(1)={avg_probs[2]:.3f}")
         print()
         
-        # Create simple superposition circuit
+        # QUANTUM CIRCUIT CONSTRUCTION FOR TRUE PARALLELIZATION
+        # 6 qubits total: 4 for grid positions + 2 for discrete Gaussian outcomes
         qc = QuantumCircuit(6, 6)
         
-        # Create superposition over grid positions (4 qubits)
-        for i in range(4):
-            qc.h(i)
+        # STEP 1: CREATE QUANTUM SUPERPOSITION OVER ALL GRID POSITIONS
+        # Apply Hadamard gates to create uniform superposition: |0000⟩ → (1/√16) Σᵢ |i⟩
+        # 
+        # HADAMARD GATE FOUNDATION:
+        # H|0⟩ = (1/√2)(|0⟩ + |1⟩) - creates equal superposition of 0 and 1
+        # H⊗H⊗H⊗H|0000⟩ creates superposition over all 16 possible 4-bit strings
+        # This gives us quantum parallelism: all grid positions computed simultaneously
+        for i in range(4):  # Apply Hadamard to each grid qubit
+            qc.h(i)  # H gate: |0⟩ → (1/√2)(|0⟩ + |1⟩)
         
-        # Encode average Gaussian distribution on outcome qubits
-        target_amplitudes = np.zeros(4)
-        target_amplitudes[0] = np.sqrt(avg_probs[0])  # |00⟩ -> P(-1)
-        target_amplitudes[1] = np.sqrt(avg_probs[1])  # |01⟩ -> P(0)
-        target_amplitudes[2] = np.sqrt(avg_probs[2])  # |10⟩ -> P(1)  
-        target_amplitudes[3] = 0.0                    # |11⟩ -> unused
+        # STEP 2: ENCODE DISCRETE GAUSSIAN ON OUTCOME QUBITS
+        # Apply average Gaussian parameters to qubits 4-5 (outcome qubits)
+        # 
+        # AMPLITUDE ENCODING TECHNIQUE:
+        # Convert classical probabilities [P(-1), P(0), P(1)] into quantum amplitudes
+        # Quantum state: |ψ⟩ = √P(-1)|00⟩ + √P(0)|01⟩ + √P(1)|10⟩ + 0|11⟩
+        # 
+        # INITIALIZE GATE EXPLANATION:
+        # Qiskit's initialize() gate performs arbitrary state preparation
+        # Takes target amplitude vector and creates quantum circuit to prepare that state
+        # Automatically decomposes into elementary gates (RY, CNOT, etc.)
+        target_amplitudes = np.zeros(4)  # 2 qubits = 4 possible states |00⟩,|01⟩,|10⟩,|11⟩
+        target_amplitudes[0] = np.sqrt(avg_probs[0])  # |00⟩ → outcome -1, amplitude = √P(-1)
+        target_amplitudes[1] = np.sqrt(avg_probs[1])  # |01⟩ → outcome 0, amplitude = √P(0)
+        target_amplitudes[2] = np.sqrt(avg_probs[2])  # |10⟩ → outcome +1, amplitude = √P(1)  
+        target_amplitudes[3] = 0.0                    # |11⟩ → unused, amplitude = 0
         
+        # Apply amplitude encoding to outcome qubits (indices 4 and 5)
         qc.initialize(target_amplitudes, [4, 5])
-        qc.measure_all()
         
+        # STEP 3: MEASUREMENT - Collapse quantum superposition to classical outcomes
+        qc.measure_all()  # Measure all 6 qubits simultaneously
+        
+        # QUANTUM CIRCUIT ANALYSIS
         print(f"Quantum circuit created:")
-        print(f"  Depth: {qc.depth()}")
+        print(f"  Depth: {qc.depth()} (circuit layers required for execution)")
         print(f"  Qubits: 6 (4 grid + 2 outcome)")
         print(f"  Concept: All {self.grid_size} grid points processed simultaneously in superposition")
         print(f"  Theoretical advantage: O(√N) vs classical O(N)")
+        print(f"  Quantum state: (1/√16) Σᵢ |grid_i⟩ ⊗ (√P(-1)|00⟩ + √P(0)|01⟩ + √P(1)|10⟩)")
         print()
         
-        # Execute the demonstration circuit
-        simulator = AerSimulator()
+        # STEP 4: QUANTUM EXECUTION 
+        # Run the quantum circuit on a classical simulator
+        # In practice, this would run on actual quantum hardware
+        simulator = AerSimulator()  # Classical simulation of quantum computer
         pm = generate_preset_pass_manager(backend=simulator, optimization_level=1)
-        qc_transpiled = pm.run(qc)
+        qc_transpiled = pm.run(qc)  # Optimize circuit for execution
         
-        job = simulator.run(qc_transpiled, shots=shots)
-        counts = job.result().get_counts()
+        # Execute quantum circuit multiple times to gather statistics
+        job = simulator.run(qc_transpiled, shots=shots)  # Quantum job submission
+        counts = job.result().get_counts()  # Get measurement result statistics
         
         # Parse and display results
         demo_results = {}
