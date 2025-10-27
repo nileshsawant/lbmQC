@@ -46,3 +46,6 @@ venv.bak/
 
 # Thumbnails
 ._*
+
+# Textbook PDFs (not for repository)
+*.pdf
