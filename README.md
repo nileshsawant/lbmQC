@@ -110,3 +110,19 @@ This implementation can be extended to:
 - More outcome values (requires additional qubits or qutrits)
 - 2D/3D grids with spatial correlations
 - Real quantum hardware execution (currently uses Aer simulator)
+
+## Citation
+
+If you use this library in your research, please cite:
+
+```bibtex
+@software{sawant2025_quantum_discrete_gaussian,
+  title = {Quantum Discrete Gaussian Distribution for lbmQC},
+  author = {Sawant, Nilesh}, 
+  year = {2025},
+  url = {https://github.com/nsawant/lbmQC},
+  version={0.1},
+  month={10},
+  keywords = {quantum computing, discrete Gaussian distribution, amplitude encoding, quantum circuits, lattice Boltzmann method, quantum sampling, probabilistic modeling, qiskit, quantum simulation, spatial probability distributions}
+}
+```
