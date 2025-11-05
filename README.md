@@ -120,7 +120,7 @@ If you use this library in your research, please cite:
   title = {Quantum Discrete Gaussian Distribution for lbmQC},
   author = {Sawant, Nilesh}, 
   year = {2025},
-  url = {https://github.com/nsawant/lbmQC},
+  url = {https://github.com/nileshsawant/lbmQC},
   version={0.1},
   month={10},
   keywords = {quantum computing, discrete Gaussian distribution, amplitude encoding, quantum circuits, lattice Boltzmann method, quantum sampling, probabilistic modeling, qiskit, quantum simulation, spatial probability distributions}
