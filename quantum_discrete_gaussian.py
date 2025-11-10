@@ -483,16 +483,19 @@ class QuantumDiscreteGaussian:
             demo_results[grid_position][outcome] += count
             total_valid += count
         
-        print(f"Quantum superposition results (using average parameters):")
-        for i in range(min(3, self.grid_size)):  # Show first 3 points
-            total_point = sum(demo_results[i].values())
-            if total_point > 0:
-                probs = {k: v/total_point for k, v in demo_results[i].items()}
-                print(f"  Grid {i}: P(-1)={probs[-1]:.3f}, P(0)={probs[0]:.3f}, P(1)={probs[1]:.3f} [≈average params]")
-        
-        print(f"\n This demonstrates quantum superposition over all grid points!")
-        print(f" For accuracy, use the hybrid approach with individual parameters.")
-        print("=" * 70)
+            print(f"Quantum superposition results (using average parameters):")
+            for i in range(min(3, self.grid_size)):  # Show first 3 points
+                total_point = sum(demo_results[i].values())
+                if total_point > 0:
+                    probs = {k: v/total_point for k, v in demo_results[i].items()}
+                    print(f"  Grid {i}: P(-1)={probs[-1]:.3f}, P(0)={probs[0]:.3f}, P(1)={probs[1]:.3f} [≈average params]")
+
+            print(f"\n This demonstrates quantum superposition over all grid points!")
+            print(f" For accuracy, use the hybrid approach with individual parameters.")
+            print("=" * 70)
+
+            # Return demo results so callers can analyze/plot them
+            return demo_results
     
     def plot_results(self, results: Dict[int, Dict[int, int]]):
         """Enhanced visualization with comprehensive analysis"""
@@ -637,12 +640,16 @@ def main():
     
     # Run hybrid quantum simulation (accurate individual parameters)
     results = qdg.quantum_parallel_grid_sampling(shots_per_point=2000)
-    
-    # Demonstrate true quantum parallelization concept
-    qdg.demonstrate_true_quantum_parallelization(shots=5000)
-    
-    # Plot and analyze results
+
+    # Demonstrate true quantum parallelization concept and capture results
+    #demo_results = qdg.demonstrate_true_quantum_parallelization(shots=5000)
+
+    # Plot and analyze results (hybrid results)
     qdg.plot_results(results)
+
+    # Also plot demonstration results so the demo output is visible
+    #if demo_results:
+    #    qdg.plot_results(demo_results)
     
     print("Analysis complete! Check 'results.png' for visualizations.")
 
