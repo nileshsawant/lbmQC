@@ -10,12 +10,10 @@ Outcomes: {-1, 0, 1}
 
 import numpy as np
 import matplotlib.pyplot as plt
-from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister
-from qiskit.circuit.library import RYGate
+from qiskit import QuantumCircuit
 from qiskit_aer import AerSimulator
 from qiskit.transpiler.preset_passmanagers import generate_preset_pass_manager
-import math
-from typing import List, Tuple, Dict
+from typing import Tuple, Dict
 
 class QuantumDiscreteGaussian:
     def __init__(self, grid_size: int = 10):
@@ -304,86 +302,9 @@ class QuantumDiscreteGaussian:
         2. For each grid position, apply controlled rotations with correct μ,σ² parameters
         3. Use amplitude encoding for precise discrete Gaussian distributions
         """
-        means, variances = self.compute_parameters()
-        
-        # Circuit with 4 grid qubits + 2 outcome qubits  
-        grid_qubits = 4
-        outcome_qubits = 2
-        total_qubits = grid_qubits + outcome_qubits
-        
-        qc = QuantumCircuit(total_qubits, total_qubits)
-        
-        # Step 1: Create uniform superposition over valid grid positions |0 to |9
-        # This is complex because we need exactly 10 states out of 2^4=16
-        
-        # Use amplitude encoding to create: (1/√10) Σᵢ₌₀⁹ |i  
-        grid_amplitudes = np.zeros(2**grid_qubits)
-        for i in range(self.grid_size):
-            grid_amplitudes[i] = 1.0 / np.sqrt(self.grid_size)
-        
-        qc.initialize(grid_amplitudes, range(grid_qubits))
-        
-        print("Grid superposition created over positions 0-9")
-        
-        # Step 2: For each grid position, apply controlled Gaussian encoding
-        # This creates the entangled state: Σᵢ (1/√10)|i ⊗ |ψ_Gaussian(μᵢ,σᵢ²)
-        
-        for grid_idx in range(self.grid_size):
-            mu = means[grid_idx] 
-            sigma_sq = variances[grid_idx]
-            probs = self.classical_discrete_gaussian_probs(mu, sigma_sq)
-            
-            print(f"Encoding grid {grid_idx}: μ={mu:.4f}, σ²={sigma_sq:.4f}, P={probs}")
-            
-            # Create controlled amplitude encoding for this specific grid position
-            # We need multi-controlled operations conditioned on |grid_idx
-            
-            # Convert grid_idx to binary for multi-controlled gates
-            grid_binary = format(grid_idx, f'0{grid_qubits}b')
-            
-            # Prepare control state: flip qubits where we want |0 control
-            for bit_pos, bit_val in enumerate(grid_binary):
-                if bit_val == '0':
-                    qc.x(bit_pos)
-            
-            # Apply controlled discrete Gaussian encoding using RY rotations
-            # Target: |00→P(-1), |01→P(0), |10→P(1), |11→0
-            
-            # First controlled rotation: P(first_qubit=0) vs P(first_qubit=1)  
-            # P(first_qubit=0) = P(-1) + P(0), P(first_qubit=1) = P(1)
-            p_first_0 = probs[0] + probs[1]  # P(-1) + P(0)
-            p_first_1 = probs[2]            # P(1)
-            
-            if p_first_0 > 1e-10:
-                theta1 = 2 * np.arcsin(np.sqrt(p_first_1))  # Probability of |1X states
-                
-                # Multi-controlled RY gate conditioned on |grid_idx
-                control_qubits = list(range(grid_qubits))
-                qc.mcry(theta1, control_qubits, grid_qubits)
-            
-            # Second controlled rotation: P(|00) vs P(|01) given first qubit is |0
-            if p_first_0 > 1e-10:
-                # P(second_qubit=1 | first_qubit=0) = P(0) / [P(-1) + P(0)]
-                p_cond = probs[1] / p_first_0
-                theta2 = 2 * np.arcsin(np.sqrt(p_cond))
-                
-                # Multi-controlled RY conditioned on grid_idx AND first outcome qubit = 0
-                control_qubits = list(range(grid_qubits))  # Grid position control
-                qc.x(grid_qubits)  # Flip to control on |0
-                control_qubits.append(grid_qubits)  # Add first outcome qubit control
-                qc.mcry(theta2, control_qubits, grid_qubits + 1)
-                qc.x(grid_qubits)  # Flip back
-            
-            # Restore control qubits to original state
-            for bit_pos, bit_val in enumerate(grid_binary):
-                if bit_val == '0':
-                    qc.x(bit_pos)
-        
-        # Measure all qubits
-        qc.measure_all()
-        
-        print(f"True parallel circuit created with {qc.depth()} depth")
-        return qc
+        # This function implemented a full true-parallel circuit but was unused.
+        # Removed heavy implementation to keep module focused and maintainable.
+        raise NotImplementedError("create_true_parallel_quantum_circuit has been removed (unused)")
     
     def quantum_parallel_grid_sampling(self, shots_per_point: int = 1000) -> Dict[int, Dict[int, int]]:
         """
@@ -432,93 +353,6 @@ class QuantumDiscreteGaussian:
         
         print(" Hybrid quantum sampling complete!")
         print(" High accuracy maintained with individual parameter encoding")
-        
-        return results
-        
-        # Parse results: Extract grid position and outcome from measurement
-        results = {}
-        for i in range(self.grid_size):
-            results[i] = {-1: 0, 0: 0, 1: 0}
-        
-        # Parse quantum measurement results
-        total_valid_measurements = 0
-        
-        for bitstring, count in counts.items():
-            # Parse Qiskit bitstring format: 'q5q4q3q2q1q0 000000' (6 measurement bits + empty register)
-            parts = bitstring.split()
-            if len(parts) != 2:
-                continue
-                
-            # Take the first part which contains our 6 qubit measurements
-            measurement_bits = parts[0]
-            if len(measurement_bits) != 6:
-                continue
-            
-            # Qiskit measures in reverse order: q5 q4 q3 q2 q1 q0
-            # Our circuit: qubits 0-3 are grid, qubits 4-5 are outcome
-            # So: measurement_bits = q5 q4 q3 q2 q1 q0
-            outcome_bits = measurement_bits[:2]   # q5 q4 (outcome qubits)
-            grid_bits = measurement_bits[2:]      # q3 q2 q1 q0 (grid qubits)
-            
-            # Convert grid position from binary
-            grid_position = int(grid_bits, 2)
-            
-            # Only process valid grid positions (0-9)
-            if grid_position >= self.grid_size:
-                continue
-            
-            # Convert outcome bits to discrete Gaussian outcome
-            if outcome_bits == '00':
-                outcome = -1
-            elif outcome_bits == '01':
-                outcome = 0  
-            elif outcome_bits == '10':
-                outcome = 1
-            else:
-                continue  # Skip invalid outcomes (11 is unused)
-            
-            results[grid_position][outcome] += count
-            total_valid_measurements += count
-        
-        print(f"Total valid measurements processed: {total_valid_measurements}/{total_shots}")
-        
-        # If some grid points have no measurements, distribute average results
-        avg_results_per_point = total_valid_measurements // self.grid_size
-        for i in range(self.grid_size):
-            if sum(results[i].values()) == 0:
-                # Give this point some default measurements based on theoretical probabilities
-                theoretical_probs = self.classical_discrete_gaussian_probs(means[i], variances[i])
-                results[i][-1] = int(theoretical_probs[0] * avg_results_per_point)
-                results[i][0] = int(theoretical_probs[1] * avg_results_per_point)  
-                results[i][1] = int(theoretical_probs[2] * avg_results_per_point)
-        
-        # Display results with quantum vs theoretical comparison
-        print("Quantum Parallel Results:")
-        print("=" * 60)
-        
-        for i in range(self.grid_size):
-            mu = means[i]
-            sigma_sq = variances[i]
-            
-            total_shots_this_point = sum(results[i].values())
-            if total_shots_this_point == 0:
-                continue
-                
-            probs_empirical = {k: v/total_shots_this_point for k, v in results[i].items()}
-            probs_theoretical = self.classical_discrete_gaussian_probs(mu, sigma_sq)
-            
-            print(f"Point {i}: μ={mu:.4f}, σ²={sigma_sq:.4f} [shots: {total_shots_this_point}]")
-            print(f"  Quantum:     P(-1)={probs_empirical[-1]:.3f}, P(0)={probs_empirical[0]:.3f}, P(1)={probs_empirical[1]:.3f}")
-            print(f"  Theoretical: P(-1)={probs_theoretical[0]:.3f}, P(0)={probs_theoretical[1]:.3f}, P(1)={probs_theoretical[2]:.3f}")
-            
-            # Calculate total variation distance
-            tv_distance = 0.5 * sum(abs(probs_empirical[outcome] - probs_theoretical[idx]) 
-                                  for idx, outcome in enumerate([-1, 0, 1]))
-            print(f"  TV Distance: {tv_distance:.4f}")
-            print()
-        
-        print(" Quantum parallelization complete!")
-        print(f" Achieved O(√N) quantum speedup using superposition over {self.grid_size} grid points")
         
         return results
     
