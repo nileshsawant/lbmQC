@@ -1,13 +1,17 @@
-# Quantum Discrete Gaussian Distribution for lbmQC
+# Quantum Discrete Gaussian Distribution / Maxwell Boltzmann distribution
+
+The Maxwell Boltzmann distribution describes the local state of fluid with a Guassian distribution in the velocity space. The mean of this distribution represents the local velocity of the fluid and the variance of the distribution represents the energy (or temperature) of the fluid. 
+
+https://en.wikipedia.org/wiki/Maxwell%E2%80%93Boltzmann_distribution 
 
 This module implements quantum computing algorithms for generating discrete Gaussian distributions on 1D grids with spatially varying parameters.
 
-## What This Adds to lbmQC
+## What this does
 
 - **Quantum discrete Gaussian sampling** over outcomes {-1, 0, 1}
 - **Spatially varying parameters**: Mean and variance with sine wave modulation
 - **2-qubit quantum circuits** using amplitude encoding
-- **Grid-based probability distributions** for LBM applications
+- **Grid-based probability distributions** for LBM-like applications
 
 ## Problem Setup
 
@@ -32,7 +36,7 @@ Uses a 2-qubit quantum circuit to encode the discrete Gaussian distribution:
 
 - 10 lattice points sampled individually on a classical loop
 - Outcomes {-1, 0, 1} amplitude-encoded on two qubits
-- Mean μ(x) = 0.1 × sin(2π × x/10)
+- Mean u(x) = 0.1 × sin(2π × x/10)
 - Variance T(x) = 1/3 + 0.05 × sin(2π × x/10)
 
 ### Core Components
