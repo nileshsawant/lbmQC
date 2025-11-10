@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 from qiskit import QuantumCircuit
 from qiskit_aer import AerSimulator
 from qiskit.transpiler.preset_passmanagers import generate_preset_pass_manager
-from typing import Tuple, Dict
+from typing import Tuple, Dict, Optional
 
 class QuantumDiscreteGaussian:
     def __init__(self, grid_size: int = 10):
@@ -290,37 +290,27 @@ class QuantumDiscreteGaussian:
         # These counts represent the quantum sampling results for this grid point
         return outcome_counts
     
-    def create_true_parallel_quantum_circuit(self) -> QuantumCircuit:
+     
+    def quantum_parallel_grid_sampling(
+        self,
+        shots_per_point: int = 1000,
+        means: Optional[np.ndarray] = None,
+        variances: Optional[np.ndarray] = None,
+    ) -> Dict[int, Dict[int, int]]:
+        """Run the quantum sampler serially across the grid.
+
+        The name retains the earlier "parallel" terminology for backward compatibility,
+        but the implementation executes one circuit per grid point on the host.
         """
-        Create TRUE quantum parallel circuit with PROPER spatially-varying parameters.
+        if means is None or variances is None:
+            means, variances = self.compute_parameters()
         
-        This implements genuine quantum parallelization where each grid position 
-        gets its correct individual Gaussian parameters, not averaged ones.
-        
-        Strategy:
-        1. Create superposition over grid positions 0-9
-        2. For each grid position, apply controlled rotations with correct μ,σ² parameters
-        3. Use amplitude encoding for precise discrete Gaussian distributions
-        """
-        # This function implemented a full true-parallel circuit but was unused.
-        # Removed heavy implementation to keep module focused and maintainable.
-        raise NotImplementedError("create_true_parallel_quantum_circuit has been removed (unused)")
-    
-    def quantum_parallel_grid_sampling(self, shots_per_point: int = 1000) -> Dict[int, Dict[int, int]]:
-        """
-        Hybrid approach: Use quantum circuits for individual points but execute them 
-        in conceptually parallel manner to demonstrate quantum advantage.
-        
-        This maintains accuracy while showing the quantum parallelization concept.
-        """
-        means, variances = self.compute_parameters()
-        
-        print(" HYBRID Quantum Parallel Grid Sampling...")
-        print("=" * 60) 
+        print("Quantum grid sampling (one circuit per point)...")
+        print("=" * 60)
         print(f"Grid points: {self.grid_size}")
         print(f"Shots per point: {shots_per_point}")
-        print(f"Approach: Individual quantum circuits with parallel execution concept")
-        print(f"Accuracy: High (individual parameters per grid point)")
+        print("Execution: Serial evaluation on classical host")
+        print("Accuracy: High (individual parameters per grid point)")
         print("-" * 60)
         
         results = {}
@@ -351,155 +341,25 @@ class QuantumDiscreteGaussian:
             print(f"  TV Distance: {tv_distance:.4f}")
             print()
         
-        print(" Hybrid quantum sampling complete!")
-        print(" High accuracy maintained with individual parameter encoding")
+        print("Quantum sampling pass complete!")
+        print("High accuracy maintained with individual parameter encoding")
         
         return results
     
-    def demonstrate_true_quantum_parallelization(self, shots: int = 5000) -> None:
-        """
-        Educational demonstration of TRUE quantum parallelization using superposition
-        
-        QUANTUM PARALLELIZATION THEORY:
-        Classical computation: Process N grid points sequentially → O(N) time complexity
-        Quantum computation: Process N grid points simultaneously in superposition → O(√N) time
-        
-        KEY QUANTUM CONCEPTS DEMONSTRATED:
-        1. SUPERPOSITION: All grid positions exist simultaneously as |ψ = (1/√N) Σᵢ |grid_i
-        2. ENTANGLEMENT: Grid positions become entangled with their Gaussian outcomes  
-        3. MEASUREMENT: Single measurement collapses superposition to classical result
-        4. QUANTUM ADVANTAGE: O(√N) speedup through Grover-style amplitude amplification
-        
-        EDUCATIONAL PURPOSE:
-        This function shows the theoretical quantum advantage concept, even though
-        practical implementation requires individual parameter accuracy (hybrid approach).
-        """
-        print("\n DEMONSTRATING True Quantum Parallelization Concept...")
-        print("=" * 70)
-        
-        means, variances = self.compute_parameters()
-        
-        # STRATEGIC SIMPLIFICATION: Use average parameters for clear demonstration
-        # In practice, each grid point needs individual parameters for accuracy
-        # Here we sacrifice accuracy to clearly show the quantum superposition concept
-        avg_mu = np.mean(means)
-        avg_sigma_sq = np.mean(variances) 
-        avg_probs = self.classical_discrete_gaussian_probs(avg_mu, avg_sigma_sq)
-        
-        print(f"Demonstration using average parameters:")
-        print(f"  Average μ = {avg_mu:.4f}")
-        print(f"  Average σ² = {avg_sigma_sq:.4f}")  
-        print(f"  Average probabilities: P(-1)={avg_probs[0]:.3f}, P(0)={avg_probs[1]:.3f}, P(1)={avg_probs[2]:.3f}")
-        print()
-        
-        # QUANTUM CIRCUIT CONSTRUCTION FOR TRUE PARALLELIZATION
-        # 6 qubits total: 4 for grid positions + 2 for discrete Gaussian outcomes
-        qc = QuantumCircuit(6, 6)
-        
-        # STEP 1: CREATE QUANTUM SUPERPOSITION OVER ALL GRID POSITIONS
-        # Apply Hadamard gates to create uniform superposition: |0000 → (1/√16) Σᵢ |i
-        # 
-        # HADAMARD GATE FOUNDATION:
-        # H|0 = (1/√2)(|0 + |1) - creates equal superposition of 0 and 1
-        # H⊗H⊗H⊗H|0000 creates superposition over all 16 possible 4-bit strings
-        # This gives us quantum parallelism: all grid positions computed simultaneously
-        for i in range(4):  # Apply Hadamard to each grid qubit
-            qc.h(i)  # H gate: |0 → (1/√2)(|0 + |1)
-        
-        # STEP 2: ENCODE DISCRETE GAUSSIAN ON OUTCOME QUBITS
-        # Apply average Gaussian parameters to qubits 4-5 (outcome qubits)
-        # 
-        # AMPLITUDE ENCODING TECHNIQUE:
-        # Convert classical probabilities [P(-1), P(0), P(1)] into quantum amplitudes
-        # Quantum state: |ψ = √P(-1)|00 + √P(0)|01 + √P(1)|10 + 0|11
-        # 
-        # INITIALIZE GATE EXPLANATION:
-        # Qiskit's initialize() gate performs arbitrary state preparation
-        # Takes target amplitude vector and creates quantum circuit to prepare that state
-        # Automatically decomposes into elementary gates (RY, CNOT, etc.)
-        target_amplitudes = np.zeros(4)  # 2 qubits = 4 possible states |00,|01,|10,|11
-        target_amplitudes[0] = np.sqrt(avg_probs[0])  # |00 → outcome -1, amplitude = √P(-1)
-        target_amplitudes[1] = np.sqrt(avg_probs[1])  # |01 → outcome 0, amplitude = √P(0)
-        target_amplitudes[2] = np.sqrt(avg_probs[2])  # |10 → outcome +1, amplitude = √P(1)  
-        target_amplitudes[3] = 0.0                    # |11 → unused, amplitude = 0
-        
-        # Apply amplitude encoding to outcome qubits (indices 4 and 5)
-        qc.initialize(target_amplitudes, [4, 5])
-        
-        # STEP 3: MEASUREMENT - Collapse quantum superposition to classical outcomes
-        qc.measure_all()  # Measure all 6 qubits simultaneously
-        
-        # QUANTUM CIRCUIT ANALYSIS
-        print(f"Quantum circuit created:")
-        print(f"  Depth: {qc.depth()} (circuit layers required for execution)")
-        print(f"  Qubits: 6 (4 grid + 2 outcome)")
-        print(f"  Concept: All {self.grid_size} grid points processed simultaneously in superposition")
-        print(f"  Theoretical advantage: O(√N) vs classical O(N)")
-        print(f"  Quantum state: (1/√16) Σᵢ |grid_i ⊗ (√P(-1)|00 + √P(0)|01 + √P(1)|10)")
-        print()
-        
-        # STEP 4: QUANTUM EXECUTION 
-        # Run the quantum circuit on a classical simulator
-        # In practice, this would run on actual quantum hardware
-        simulator = AerSimulator()  # Classical simulation of quantum computer
-        pm = generate_preset_pass_manager(backend=simulator, optimization_level=1)
-        qc_transpiled = pm.run(qc)  # Optimize circuit for execution
-        
-        # Execute quantum circuit multiple times to gather statistics
-        job = simulator.run(qc_transpiled, shots=shots)  # Quantum job submission
-        counts = job.result().get_counts()  # Get measurement result statistics
-        
-        # Parse and display results
-        demo_results = {}
-        for i in range(self.grid_size):
-            demo_results[i] = {-1: 0, 0: 0, 1: 0}
-        
-        total_valid = 0
-        for bitstring, count in counts.items():
-            parts = bitstring.split()
-            if len(parts) != 2:
-                continue
-            
-            measurement_bits = parts[0]
-            if len(measurement_bits) != 6:
-                continue
-                
-            outcome_bits = measurement_bits[:2]
-            grid_bits = measurement_bits[2:]
-            
-            grid_position = int(grid_bits, 2)
-            if grid_position >= self.grid_size:
-                continue
-                
-            if outcome_bits == '00':
-                outcome = -1
-            elif outcome_bits == '01':
-                outcome = 0
-            elif outcome_bits == '10':
-                outcome = 1
-            else:
-                continue
-                
-            demo_results[grid_position][outcome] += count
-            total_valid += count
-        
-            print(f"Quantum superposition results (using average parameters):")
-            for i in range(min(3, self.grid_size)):  # Show first 3 points
-                total_point = sum(demo_results[i].values())
-                if total_point > 0:
-                    probs = {k: v/total_point for k, v in demo_results[i].items()}
-                    print(f"  Grid {i}: P(-1)={probs[-1]:.3f}, P(0)={probs[0]:.3f}, P(1)={probs[1]:.3f} [≈average params]")
-
-            print(f"\n This demonstrates quantum superposition over all grid points!")
-            print(f" For accuracy, use the hybrid approach with individual parameters.")
-            print("=" * 70)
-
-            # Return demo results so callers can analyze/plot them
-            return demo_results
     
-    def plot_results(self, results: Dict[int, Dict[int, int]]):
-        """Enhanced visualization with comprehensive analysis"""
-        means, variances = self.compute_parameters()
+    def plot_results(
+        self,
+        results: Dict[int, Dict[int, int]],
+        means: np.ndarray,
+        variances: np.ndarray,
+        filename: str = 'results_quantum_sampling.png',
+    ):
+        """Enhanced visualization with comprehensive analysis.
+
+        Expects precomputed ``means`` and ``variances`` to avoid redundant work.
+
+        filename: path where the plot will be saved (defaults to 'results_quantum_sampling.png')
+        """
         
         # Check if we have valid results
         total_measurements = sum(sum(point_results.values()) for point_results in results.values())
@@ -618,8 +478,10 @@ class QuantumDiscreteGaussian:
                 bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgray", alpha=0.7))
         
         plt.tight_layout()
-        plt.savefig('results_improved.png', dpi=300, bbox_inches='tight')
+        plt.savefig(filename, dpi=300, bbox_inches='tight')
         plt.show()
+
+
 
 def main():
     """Main execution function"""
@@ -637,21 +499,17 @@ def main():
     print(f"Variance range: [{variances.min():.4f}, {variances.max():.4f}]")
     print(f"Outcomes: {qdg.outcomes}")
     print()
+
+    # Quantum sampling sweep (serial per grid point)
+    results = qdg.quantum_parallel_grid_sampling(
+        shots_per_point=4000,
+        means=means,
+        variances=variances,
+    )
+    output_file = 'results_quantum_sampling.png'
+    qdg.plot_results(results, means, variances, filename=output_file)
     
-    # Run hybrid quantum simulation (accurate individual parameters)
-    results = qdg.quantum_parallel_grid_sampling(shots_per_point=2000)
-
-    # Demonstrate true quantum parallelization concept and capture results
-    #demo_results = qdg.demonstrate_true_quantum_parallelization(shots=5000)
-
-    # Plot and analyze results (hybrid results)
-    qdg.plot_results(results)
-
-    # Also plot demonstration results so the demo output is visible
-    #if demo_results:
-    #    qdg.plot_results(demo_results)
-    
-    print("Analysis complete! Check 'results.png' for visualizations.")
+    print(f"Analysis complete! Check '{output_file}' for visualizations.")
 
 if __name__ == "__main__":
     main()
