@@ -16,8 +16,8 @@ This module implements quantum computing algorithms for generating discrete Gaus
 ## Problem Setup
 
 - **Grid**: 10 points in 1D
-- **Mean variation**: μ(x) = 0.1 × sin(2π × x/10)  
-- **Variance variation**: T(x) = T₀ + 0.05 × sin(2π × x/10), where T₀ = 1/3
+- **Mean variation**: $u(x) = \mu(x) = 0.1 \times \sin(2\pi x / 10)$
+- **Variance variation**: $\sigma^2 (x) = T(x) = T_0 + 0.05 \times \sin(2\pi x / 10)$, where $T_0 = 1/3$
 - **Outcomes**: {-1, 0, 1}
 
 ## Quantum Algorithm
