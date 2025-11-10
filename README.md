@@ -32,8 +32,7 @@ Uses a 2-qubit quantum circuit to encode the discrete Gaussian distribution:
 
 ### Key Features
 - **Amplitude encoding**: Direct encoding of probabilities as quantum amplitudes
-- **Parallelization**: Each grid point processed with independent quantum circuits
-- **High fidelity**: Exact probability encoding without approximation errors
+- **Per-point circuits**: Independent circuits for each grid point executed serially (or batched on the simulator)
 
 ## Usage
 
@@ -44,36 +43,6 @@ pip install -r requirements.txt
 # Run the quantum simulation
 python quantum_discrete_gaussian.py
 ```
-
-## 📚 Complete Learning Resources
-
-### Comprehensive Textbook
-
-For detailed learning and understanding, see the complete textbook: **[QUANTUM_DISCRETE_GAUSSIAN_TEXTBOOK.md](QUANTUM_DISCRETE_GAUSSIAN_TEXTBOOK.md)**
-
-This textbook provides:
-- **No Prerequisites Assumed**: Builds from basic probability to advanced quantum algorithms
-- **Mathematical Rigor**: Complete proofs and derivations with proper academic citations  
-- **Practical Implementation**: Detailed code explanations with educational comments
-- **Exercises & Projects**: Hands-on problems ranging from basic to research-level
-- **Academic References**: Proper citations to Nielsen & Chuang and modern quantum computing literature
-
-### 📖 Recommended Learning Path
-
-1. **Sections 1-3**: Mathematical foundations and classical probability theory
-2. **Sections 4-5**: Introduction to quantum computing and amplitude encoding
-3. **Sections 6-7**: Implementation theory and practical coding  
-4. **Sections 8-9**: Algorithm analysis and advanced topics
-5. **Section 10**: Exercises and projects for deeper understanding
-
-### 🎯 Key Learning Outcomes
-
-After working through the materials, you will understand:
-- How quantum superposition enables probabilistic sampling
-- The mathematics of amplitude encoding for probability distributions
-- Practical quantum circuit construction using Qiskit
-- Performance analysis and accuracy validation techniques
-- Applications to scientific computing and machine learning
 
 ## Output
 
@@ -90,7 +59,7 @@ The program generates:
 - **Qubits required**: 2 per grid point
 - **Gate depth**: O(1) per point (constant depth)
 - **Classical preprocessing**: O(N) where N = grid size
-- **Quantum advantage**: Potential for true parallelization across grid points on quantum hardware
+- **Current workflow**: Host runs one circuit per grid point (simulator batching reduces classical overhead but is not quantum parallelism)
 
 ## Theoretical Background
 
