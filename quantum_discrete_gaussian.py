@@ -244,50 +244,22 @@ class QuantumDiscreteGaussian:
         job = simulator.run(qc_compiled, shots=shots)  # Submit job to quantum simulator
         result = job.result()  # Wait for completion and get results
         counts = result.get_counts()  # Extract measurement statistics: {'bitstring': count, ...}
-        
-        # STEP 5: CLASSICAL POSTPROCESSING - Decode Quantum Results
-        #
-        # BITSTRING DECODING PROCESS:
-        # Quantum measurements produce classical bitstrings representing qubit states
-        # We must decode these bitstrings back to our discrete Gaussian outcomes
-        #
-        # QISKIT MEASUREMENT FORMAT:
-        # Qiskit returns measurements as strings like 'b1b0' where:
-        # - b1 = measurement result of qubit 1 (second qubit in our encoding)
-        # - b0 = measurement result of qubit 0 (first qubit in our encoding)  
-        # - '0' means qubit was measured in |0 state
-        # - '1' means qubit was measured in |1 state
-        #
-        # OUR QUANTUM-TO-CLASSICAL MAPPING:
-        # |q1q0 quantum state → discrete Gaussian outcome
-        # |00 → outcome -1 (both qubits in ground state)
-        # |01 → outcome  0 (first qubit ground, second qubit excited)  
-        # |10 → outcome +1 (first qubit excited, second qubit ground)
-        # |11 → unused (both qubits excited - should not occur by design)
-        
-        outcome_counts = {-1: 0, 0: 0, 1: 0}  # Initialize counters for each outcome
-        
-        # Process each measurement result from quantum execution
+        return self._decode_quantum_counts(counts)
+
+
+    def _decode_quantum_counts(self, counts: Dict[str, int]) -> Dict[int, int]:
+        """Convert raw Qiskit bitstring counts into outcome buckets {-1, 0, 1}."""
+        outcome_counts = {-1: 0, 0: 0, 1: 0}
         for bitstring, count in counts.items():
-            if len(bitstring) >= 2:  # Ensure we have measurements from both qubits
-                
-                # QISKIT QUBIT ORDERING: bitstring[0] = qubit 1, bitstring[1] = qubit 0
-                qubit1_bit = bitstring[0]  # Second qubit measurement (qubit index 1)
-                qubit0_bit = bitstring[1]  # First qubit measurement (qubit index 0)
-                
-                # DECODE QUANTUM MEASUREMENTS TO CLASSICAL OUTCOMES
-                # Apply our predetermined quantum encoding scheme
-                if qubit0_bit == '0' and qubit1_bit == '0':    # |00 state measured
-                    outcome_counts[-1] += count  # Map to discrete Gaussian outcome -1
-                elif qubit0_bit == '0' and qubit1_bit == '1':  # |01 state measured  
-                    outcome_counts[0] += count   # Map to discrete Gaussian outcome 0
-                elif qubit0_bit == '1' and qubit1_bit == '0':  # |10 state measured
-                    outcome_counts[1] += count   # Map to discrete Gaussian outcome +1
-                # Note: |11 case omitted - this state should have 0 amplitude by circuit design
-        
-        # RETURN: Dictionary mapping outcomes to their empirical counts
-        # Format: {-1: count_minus1, 0: count_zero, 1: count_plus1}
-        # These counts represent the quantum sampling results for this grid point
+            if len(bitstring) >= 2:
+                qubit1_bit = bitstring[0]
+                qubit0_bit = bitstring[1]
+                if qubit0_bit == '0' and qubit1_bit == '0':
+                    outcome_counts[-1] += count
+                elif qubit0_bit == '0' and qubit1_bit == '1':
+                    outcome_counts[0] += count
+                elif qubit0_bit == '1' and qubit1_bit == '0':
+                    outcome_counts[1] += count
         return outcome_counts
     
      
@@ -313,37 +285,50 @@ class QuantumDiscreteGaussian:
         print("Accuracy: High (individual parameters per grid point)")
         print("-" * 60)
         
-        results = {}
-        
-        # Execute quantum circuits for each grid point with proper parameters
-        # This maintains the accuracy of individual parameter encoding
+        simulator = AerSimulator()
+        pass_manager = generate_preset_pass_manager(1, simulator)
+
+        compiled_circuits = []
+        point_metadata = []  # Store classical parameters for later reporting
+
         for i in range(self.grid_size):
             mu = means[i]
-            sigma_sq = variances[i] 
-            
-            print(f"Point {i}: μ={mu:.4f}, σ²={sigma_sq:.4f}")
-            
-            # Use the proven accurate single-point quantum sampling
-            outcome_counts = self.quantum_sample_grid_point(mu, sigma_sq, shots_per_point)
+            sigma_sq = variances[i]
+            theoretical = self.classical_discrete_gaussian_probs(mu, sigma_sq)
+
+            qc = self.create_quantum_circuit(theoretical)
+            qc.name = f"grid_point_{i}"
+            qc_compiled = pass_manager.run(qc)
+            compiled_circuits.append(qc_compiled)
+            point_metadata.append((i, mu, sigma_sq, theoretical))
+
+        job = simulator.run(compiled_circuits, shots=shots_per_point)
+        result = job.result()
+
+        results = {}
+
+        for qc_compiled, (i, mu, sigma_sq, theoretical) in zip(compiled_circuits, point_metadata):
+            raw_counts = result.get_counts(qc_compiled)
+            outcome_counts = self._decode_quantum_counts(raw_counts)
             results[i] = outcome_counts
-            
-            # Show results
+
             total_shots = sum(outcome_counts.values())
-            probs_empirical = {k: v/total_shots for k, v in outcome_counts.items()}
-            probs_theoretical = self.classical_discrete_gaussian_probs(mu, sigma_sq)
-            
+            probs_empirical = {k: v / total_shots for k, v in outcome_counts.items()}
+
+            print(f"Point {i}: μ={mu:.4f}, σ²={sigma_sq:.4f}")
             print(f"  Quantum:     P(-1)={probs_empirical[-1]:.3f}, P(0)={probs_empirical[0]:.3f}, P(1)={probs_empirical[1]:.3f}")
-            print(f"  Theoretical: P(-1)={probs_theoretical[0]:.3f}, P(0)={probs_theoretical[1]:.3f}, P(1)={probs_theoretical[2]:.3f}")
-            
-            # Calculate error
-            tv_distance = 0.5 * sum(abs(probs_empirical[outcome] - probs_theoretical[idx]) 
-                                  for idx, outcome in enumerate([-1, 0, 1]))
+            print(f"  Theoretical: P(-1)={theoretical[0]:.3f}, P(0)={theoretical[1]:.3f}, P(1)={theoretical[2]:.3f}")
+
+            tv_distance = 0.5 * sum(
+                abs(probs_empirical[outcome] - theoretical[idx])
+                for idx, outcome in enumerate([-1, 0, 1])
+            )
             print(f"  TV Distance: {tv_distance:.4f}")
             print()
-        
+
         print("Quantum sampling pass complete!")
         print("High accuracy maintained with individual parameter encoding")
-        
+
         return results
     
     
