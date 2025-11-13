@@ -2,7 +2,7 @@
 
 The Maxwell Boltzmann distribution describes the local state of fluid with a Guassian distribution in the velocity space. The mean of this distribution represents the local velocity of the fluid and the variance of the distribution represents the energy (or temperature) of the fluid. 
 
-![Probability Distributions](distribution_small.png)
+<img src="distribution.png" alt="Probability Distributions" width="480">
 
 https://en.wikipedia.org/wiki/Maxwell%E2%80%93Boltzmann_distribution 
 
@@ -32,7 +32,7 @@ Uses a 2-qubit quantum circuit to encode the discrete Gaussian distribution:
 - |10⟩ → outcome +1
 - |11⟩ → unused
 
-![Quantum Circuit Gates](gates_small.png)
+<img src="gates.png" alt="Quantum Circuit Gates" width="480">
 
 ## Implementation Overview
 
