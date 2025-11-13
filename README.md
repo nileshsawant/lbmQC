@@ -30,6 +30,8 @@ Uses a 2-qubit quantum circuit to encode the discrete Gaussian distribution:
 - |10⟩ → outcome +1
 - |11⟩ → unused
 
+![Quantum Circuit Gates](gates.png)
+
 ## Implementation Overview
 
 ### Grid Model
@@ -84,6 +86,8 @@ The program generates:
     - Variance parameter variation across the grid
     - 2D heatmap of empirical probability distributions
     - Theoretical vs quantum empirical comparison at each grid point
+
+![Probability Distributions](distribution.png)
 
 ## Algorithm Complexity
 

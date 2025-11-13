@@ -262,6 +262,18 @@ class QuantumDiscreteGaussian:
                     outcome_counts[1] += count
         return outcome_counts
     
+    def print_circuit_example(self, grid_point: int = 0):
+        """Print the quantum circuit for a specific grid point"""
+        means, variances = self.compute_parameters()
+        mu = means[grid_point]
+        sigma_sq = variances[grid_point]
+        probs = self.classical_discrete_gaussian_probs(mu, sigma_sq)
+        qc = self.create_quantum_circuit(probs)
+        
+        print(f"Grid Point {grid_point}: μ={mu:.4f}, σ²={sigma_sq:.4f}")
+        print(qc.draw())
+        return qc
+    
      
     def quantum_parallel_grid_sampling(
         self,
@@ -483,6 +495,11 @@ def main():
     print(f"Mean range: [{means.min():.4f}, {means.max():.4f}]")
     print(f"Variance range: [{variances.min():.4f}, {variances.max():.4f}]")
     print(f"Outcomes: {qdg.outcomes}")
+    print()
+    
+    # Show example circuit for the first grid point
+    print("EXAMPLE QUANTUM CIRCUIT:")
+    qdg.print_circuit_example(grid_point=0)
     print()
 
     # Quantum sampling sweep (serial per grid point)
