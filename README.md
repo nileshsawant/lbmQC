@@ -2,6 +2,8 @@
 
 The Maxwell Boltzmann distribution describes the local state of fluid with a Guassian distribution in the velocity space. The mean of this distribution represents the local velocity of the fluid and the variance of the distribution represents the energy (or temperature) of the fluid. 
 
+<img src="distribution.png" alt="Probability Distributions">
+
 https://en.wikipedia.org/wiki/Maxwell%E2%80%93Boltzmann_distribution 
 
 This module implements quantum computing algorithms for generating discrete Gaussian distributions on 1D grids with spatially varying parameters.
@@ -30,7 +32,7 @@ Uses a 2-qubit quantum circuit to encode the discrete Gaussian distribution:
 - |10⟩ → outcome +1
 - |11⟩ → unused
 
-![Quantum Circuit Gates](gates.png)
+<img src="gates.png" alt="Quantum Circuit Gates">
 
 ## Implementation Overview
 
@@ -87,7 +89,6 @@ The program generates:
     - 2D heatmap of empirical probability distributions
     - Theoretical vs quantum empirical comparison at each grid point
 
-![Probability Distributions](distribution.png)
 
 ## Algorithm Complexity
 
