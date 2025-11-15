@@ -16,11 +16,13 @@ from qiskit.transpiler.preset_passmanagers import generate_preset_pass_manager
 from typing import Tuple, Dict, Optional
 
 class QuantumDiscreteGaussian:
-    def __init__(self, grid_size: int = 10, circuit_type: str = 'symmetric'):
+    def __init__(self, grid_size: int = 10, circuit_type: str = 'symmetric', 
+                 grid_3d: Optional[Tuple[int, int, int]] = None):
         self.grid_size = grid_size
         self.T0 = 1/3  # Base variance
         self.outcomes = [-1, 0, 1]
         self.circuit_type = circuit_type  # Track which circuit implementation to use
+        self.grid_3d = grid_3d  # 3D grid dimensions (Nx, Ny, Nz)
         
         # Validate circuit type
         if circuit_type not in ['symmetric', 'original']:
@@ -37,6 +39,61 @@ class QuantumDiscreteGaussian:
         variances = self.T0 + 0.05 * np.sin(2 * np.pi * x_points / self.grid_size)
         
         return means, variances
+    
+    def compute_parameters_3d(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Compute 3D grid parameters with sine wave variations.
+        
+        GRID STRUCTURE:
+        3D grid with dimensions (Nx, Ny, Nz) specified in self.grid_3d
+        Default: (10, 6, 4) for 240 total grid points
+        
+        PARAMETER VARIATIONS:
+        - μₓ(x): 0.1 * sin(2π * x/Nx) - varies with x-position only
+        - μᵧ(y): 0.1 * sin(2π * y/Ny) - varies with y-position only
+        - μᵧ(z,x): 0.1 * sin(2π * z/Nz) + 0.02 * sin(2π * x/Nx) - varies with z (primary) and x (secondary)
+        - T(x): T₀ + 0.05 * sin(2π * x/Nx) - temperature varies with x-position
+        
+        PHYSICAL INTERPRETATION:
+        - Mean velocities show spatial variation (flow patterns)
+        - Temperature varies with x (energy gradient)
+        - Each dimension has independent sinusoidal variation
+        
+        RETURNS:
+        Tuple of 4 arrays, each with shape (Nx, Ny, Nz):
+        - means_x: x-component mean velocities
+        - means_y: y-component mean velocities
+        - means_z: z-component mean velocities
+        - temperatures: temperature field (isotropic at each point)
+        """
+        if self.grid_3d is None:
+            raise ValueError("3D grid dimensions not specified. Set grid_3d=(Nx, Ny, Nz) in __init__")
+        
+        Nx, Ny, Nz = self.grid_3d
+        
+        # Create coordinate arrays for each dimension
+        x_coords = np.arange(Nx)
+        y_coords = np.arange(Ny)
+        z_coords = np.arange(Nz)
+        
+        # Create 3D meshgrid: X[i,j,k] gives x-coordinate, Y[i,j,k] gives y-coordinate, etc.
+        X, Y, Z = np.meshgrid(x_coords, y_coords, z_coords, indexing='ij')
+        
+        # Mean velocity variations (each depends on one coordinate only)
+        # μₓ varies with x: flow in x-direction depends on x-position
+        means_x = 0.1 * np.sin(2 * np.pi * X / Nx)
+        
+        # μᵧ varies with y: flow in y-direction depends on y-position
+        means_y = 0.1 * np.sin(2 * np.pi * Y / Ny)
+        
+        # μᵧ varies with z: flow in z-direction depends on z-position
+        # Also add small x-variation for better visualization in 2D slices
+        means_z = 0.1 * np.sin(2 * np.pi * Z / Nz) + 0.02 * np.sin(2 * np.pi * X / Nx)
+        
+        # Temperature varies with x (energy gradient in x-direction)
+        temperatures = self.T0 + 0.05 * np.sin(2 * np.pi * X / Nx)
+        
+        return means_x, means_y, means_z, temperatures
     
     def classical_discrete_gaussian_probs(self, mu: float, sigma_sq: float) -> np.ndarray:
         """
@@ -74,23 +131,41 @@ class QuantumDiscreteGaussian:
     
     def standardLattice_discrete_gaussian_probs(self, mu: float, sigma_sq: float) -> np.ndarray:
         """
-        Calculate classical discrete Gaussian probabilities for outcomes {-1, 0, 1}
+        Calculate discrete Gaussian probabilities for outcomes {-1, 0, 1} using 
+        Maxwell-Boltzmann formulation.
         
         MATHEMATICAL FOUNDATION:
-        Reference: https://doi.org/10.3929/ethz-b-000607045
-        Using the product form of Maxwell Boltzmann distribution:
-        p = u*u + (P/rho)
-        p = u*u + T
-        psi(c) = c * 0.5 * u + std::abs(c) * (1.50 * p - 1.0) - p + 1.0;
-        psi(-1) = -0.5 * u + 0.5 * p
-        psi(+1) = +0.5 * u + 0.5 * p
-        psi(0)  = - p + 1 
-
+        Reference: Section 2.2.4 of Sawant (2024)
+        https://doi.org/10.3929/ethz-b-000607045
+        
+        Using the product form of Maxwell-Boltzmann distribution:
+        p = u*u + T  (where T is temperature/variance)
+        
+        Probabilities for each discrete velocity:
+        P(-1) = -0.5 * u + 0.5 * p  (backward motion)
+        P(0)  = -p + 1.0            (at rest)
+        P(+1) = +0.5 * u + 0.5 * p  (forward motion)
+        
+        These probabilities ensure:
+        - Sum to 1 (normalization)
+        - Mean = u (by construction)
+        - Variance = T (temperature)
+        
+        PARAMETERS:
+        - mu: mean velocity (u in the paper)
+        - sigma_sq: temperature/variance (T in the paper)
+        
+        RETURNS:
+        Array [P(-1), P(0), P(+1)] - normalized probability distribution
+        
         This classical calculation serves as the "ground truth" for our quantum implementation.
         """
-        p= mu * mu + sigma_sq
+        p = mu * mu + sigma_sq
         
-        normalized_probs = np.array([-0.5 * mu + 0.5 * p,  - p + 1.0,  +0.5 * mu + 0.5 * p     
+        normalized_probs = np.array([
+            -0.5 * mu + 0.5 * p,  # P(-1)
+            -p + 1.0,              # P(0)
+            +0.5 * mu + 0.5 * p   # P(+1)
         ])
         
         # RESULT: [P(-1), P(0), P(1)] - classical probability distribution
@@ -134,21 +209,20 @@ class QuantumDiscreteGaussian:
         
         # STEP 3: HIERARCHICAL DECOMPOSITION - First Qubit (Coarse Splitting)
         # 
-        # NEW QUANTUM STRATEGY: Split "moving particles" vs "stationary particles"
+        # QUANTUM STRATEGY: Split "moving particles" vs "stationary particles"
         # Split the 3-outcome problem into: {-1, +1} vs {0}
         # 
-        # MATHEMATICAL FOUNDATION:
+        # MATHEMATICAL FOUNDATION (from Section 2.2.4 of https://doi.org/10.3929/ethz-b-000607045):
         # First qubit encodes: P(outcome ∈ {-1, +1}) vs P(outcome = 0)
-        # P(first qubit = 0) = P(-1) + P(+1) = combined probability of motion
-        # P(first qubit = 1) = P(0) = probability of rest
+        # P(first qubit = 0) = P(-1) + P(+1) = p = μ² + T
+        # P(first qubit = 1) = P(0) = -p + 1.0
         #
-        # For velocity encoding: P(-1) + P(+1) = p = mu² + sigma_sq
-        # This is MUCH simpler than the original decomposition!
-        #
-        # QUANTUM GATE SELECTION:
+        # QUANTUM GATE FORMULATION:
         # RY gate (rotation around Y-axis): RY(θ)|0⟩ = cos(θ/2)|0⟩ + sin(θ/2)|1⟩
         # We want: |cos(θ/2)|² = P(first=0) and |sin(θ/2)|² = P(first=1)
-        # Solving: cos²(θ/2) = prob_first_0 → θ = 2*arccos(√prob_first_0)
+        # Solving: cos²(θ/2) = p → θ₁ = 2*arccos(√p) = 2*arccos(√(μ² + T))
+        # 
+        # This angle depends only on the combined parameter p, making it very stable!
         
         prob_first_0 = p_minus1 + p_plus1  # Combined probability for {-1, +1} outcomes
         
@@ -167,19 +241,23 @@ class QuantumDiscreteGaussian:
         # STEP 4: CONDITIONAL DECOMPOSITION - Second Qubit (Fine Splitting)
         #
         # QUANTUM STRATEGY: Conditional probability encoding for directional motion
-        # Given first qubit = 0 (we're in {-1, +1} subspace), distinguish between -1 and +1
+        # Given first qubit = 0 (we're in {-1, +1} subspace), distinguish -1 from +1
         #
-        # MATHEMATICAL FOUNDATION:  
-        # P(second=1 | first=0) = P(outcome=+1) / P(outcome∈{-1,+1}) = P(+1) / (P(-1) + P(+1))
-        # This uses conditional probability: P(A|B) = P(A∩B) / P(B)
-        # Here: A="second qubit is 1", B="first qubit is 0"
+        # MATHEMATICAL FOUNDATION (using Bayes' rule):  
+        # P(outcome=+1 | first=0) = P(+1) / (P(-1) + P(+1))
+        #                         = (0.5*μ + 0.5*p) / p
+        #                         = 0.5*(1 + μ/p)
         #
-        # For velocity encoding: P(+1|first=0) = 0.5*(1 + mu/(mu² + sigma_sq))
-        # This is symmetric around 0.5, reflecting the physical symmetry!
+        # This conditional probability is symmetric around 0.5:
+        # - When μ > 0: favors +1 (forward motion)
+        # - When μ < 0: favors -1 (backward motion)
+        # - When μ = 0: equal probability (no net flow)
         #
         # QUANTUM IMPLEMENTATION:
-        # Use controlled-RY gate: only rotates second qubit when first qubit is in specific state
-        # CRY gate: applies RY rotation to target qubit conditioned on control qubit state
+        # Use controlled-RY gate: rotates second qubit only when first qubit = 0
+        # Angle: θ₂ = 2*arcsin(√(P(+1|first=0))) = 2*arcsin(√(0.5*(1 + μ/p)))
+        #
+        # The control ensures this rotation applies only in the "moving" subspace!
         
         if prob_first_0 > 1e-10:  # Only proceed if {-1,+1} outcomes are possible
             
@@ -467,6 +545,123 @@ class QuantumDiscreteGaussian:
         # CIRCUIT COMPLETE: Direct parametrization without classical probability computation!
         return qc
     
+    def create_quantum_circuit_3d_parametric(self, mu_x: float, mu_y: float, mu_z: float, T: float) -> QuantumCircuit:
+        """
+        Create 6-qubit circuit for 3D velocity sampling with parallel execution.
+        
+        HARDWARE PARALLELIZATION:
+        All three dimensions execute simultaneously on independent qubit pairs.
+        Circuit depth remains 4 layers (same as 1D), achieving 3× speedup over
+        sequential execution of three 1D circuits.
+        
+        QUBIT ALLOCATION:
+        - Qubits 0-1: vₓ component (x-direction velocity)
+        - Qubits 2-3: vᵧ component (y-direction velocity)
+        - Qubits 4-5: vᵧ component (z-direction velocity)
+        
+        PHYSICAL INTERPRETATION:
+        All components share same temperature T (isotropic kinetic energy) but have
+        different mean velocities (directional flow). This represents a 3D Maxwell-
+        Boltzmann distribution for lattice velocities in 3D Lattice Boltzmann Method.
+        
+        ENCODING SCHEME (per dimension):
+        |00⟩ → -1 (negative velocity)
+        |01⟩ → +1 (positive velocity)
+        |10⟩ →  0 (zero velocity)
+        |11⟩ → unused
+        
+        3D MEASUREMENT:
+        Single measurement yields 6-bit string → (vₓ, vᵧ, vᵧ) tuple
+        Example: |001001⟩ → vₓ=+1, vᵧ=-1, vᵧ=+1
+        
+        PARAMETERS:
+        - mu_x, mu_y, mu_z: mean velocities in each dimension
+        - T: temperature/variance (shared across all dimensions)
+        
+        CONSTRAINT:
+        - Requires T < 1 and muᵢ² + T < 1 for all i ∈ {x,y,z}
+        
+        PARALLELIZATION BENEFIT:
+        Time complexity: T_circuit (not 3×T_circuit for sequential)
+        """
+        # STEP 1: Initialize 6-qubit circuit
+        qc = QuantumCircuit(6, 6)
+        
+        # STEP 2: X-COMPONENT (qubits 0-1) - Parallel execution
+        p_x = mu_x * mu_x + T
+        
+        # Validate physical constraints
+        if p_x <= 0:
+            raise ValueError(f"Invalid parameters for X: p_x = μ_x² + T = {p_x:.4f} must be positive")
+        if p_x >= 1:
+            raise ValueError(f"Invalid parameters for X: p_x = μ_x² + T = {p_x:.4f} must be < 1")
+        
+        # Calculate angles directly from parameters
+        theta1_x = 2 * np.arccos(np.sqrt(p_x))
+        prob_plus1_x = 0.5 * (1.0 + mu_x / p_x)
+        
+        if prob_plus1_x < 0 or prob_plus1_x > 1:
+            raise ValueError(f"Invalid conditional probability for X: {prob_plus1_x:.4f}")
+        
+        theta2_x = 2 * np.arcsin(np.sqrt(prob_plus1_x))
+        
+        # Apply gates to qubits 0-1
+        qc.ry(theta1_x, 0)
+        qc.x(0)
+        qc.cry(theta2_x, 0, 1)
+        qc.x(0)
+        
+        # STEP 3: Y-COMPONENT (qubits 2-3) - Parallel execution
+        p_y = mu_y * mu_y + T
+        
+        if p_y <= 0:
+            raise ValueError(f"Invalid parameters for Y: p_y = μ_y² + T = {p_y:.4f} must be positive")
+        if p_y >= 1:
+            raise ValueError(f"Invalid parameters for Y: p_y = μ_y² + T = {p_y:.4f} must be < 1")
+        
+        theta1_y = 2 * np.arccos(np.sqrt(p_y))
+        prob_plus1_y = 0.5 * (1.0 + mu_y / p_y)
+        
+        if prob_plus1_y < 0 or prob_plus1_y > 1:
+            raise ValueError(f"Invalid conditional probability for Y: {prob_plus1_y:.4f}")
+        
+        theta2_y = 2 * np.arcsin(np.sqrt(prob_plus1_y))
+        
+        # Apply gates to qubits 2-3
+        qc.ry(theta1_y, 2)
+        qc.x(2)
+        qc.cry(theta2_y, 2, 3)
+        qc.x(2)
+        
+        # STEP 4: Z-COMPONENT (qubits 4-5) - Parallel execution
+        p_z = mu_z * mu_z + T
+        
+        if p_z <= 0:
+            raise ValueError(f"Invalid parameters for Z: p_z = μ_z² + T = {p_z:.4f} must be positive")
+        if p_z >= 1:
+            raise ValueError(f"Invalid parameters for Z: p_z = μ_z² + T = {p_z:.4f} must be < 1")
+        
+        theta1_z = 2 * np.arccos(np.sqrt(p_z))
+        prob_plus1_z = 0.5 * (1.0 + mu_z / p_z)
+        
+        if prob_plus1_z < 0 or prob_plus1_z > 1:
+            raise ValueError(f"Invalid conditional probability for Z: {prob_plus1_z:.4f}")
+        
+        theta2_z = 2 * np.arcsin(np.sqrt(prob_plus1_z))
+        
+        # Apply gates to qubits 4-5
+        qc.ry(theta1_z, 4)
+        qc.x(4)
+        qc.cry(theta2_z, 4, 5)
+        qc.x(4)
+        
+        # STEP 5: MEASURE ALL QUBITS
+        # Single measurement captures all 3 velocity components simultaneously
+        qc.measure(range(6), range(6))
+        
+        # CIRCUIT COMPLETE: 3D velocity sampling with hardware parallelization!
+        return qc
+    
     def create_quantum_circuit(self, probs: np.ndarray) -> QuantumCircuit:
         """
         Create quantum circuit using the configured circuit type.
@@ -588,6 +783,382 @@ class QuantumDiscreteGaussian:
         # Use symmetric decoder (automatically selected via self.circuit_type)
         return self._decode_quantum_counts(counts)
 
+    def quantum_sample_grid_point_3d_parametric(
+        self, 
+        mu_x: float, 
+        mu_y: float, 
+        mu_z: float, 
+        T: float, 
+        shots: int = 1000
+    ) -> Dict[Tuple[int, int, int], int]:
+        """
+        Execute quantum sampling for 3D velocity distribution at a single grid point.
+        
+        WORKFLOW:
+        1. Direct circuit creation: Build 6-qubit circuit from (μₓ, μᵧ, μᵧ, T)
+        2. Quantum execution: Run circuit multiple times (shots) on simulator
+        3. Measurement: Single measurement yields full 3D velocity tuple
+        4. Decoding: Convert 6-bit strings to (vₓ, vᵧ, vᵧ) tuples
+        
+        PARALLELIZATION ADVANTAGE:
+        All three dimensions are sampled simultaneously in a single circuit execution.
+        Time = T_circuit (not 3×T_circuit for sequential 1D sampling).
+        
+        PARAMETERS:
+        - mu_x, mu_y, mu_z: mean velocities in each dimension
+        - T: temperature/variance (shared isotropic property)
+        - shots: number of quantum circuit executions (sample size)
+        
+        OUTPUT:
+        Dictionary mapping (vₓ, vᵧ, vᵧ) tuples to counts
+        Example: {(-1, 0, +1): 235, (0, 0, 0): 189, ...}
+        
+        CONSTRAINT:
+        - Requires T < 1 and μᵢ² + T < 1 for all i ∈ {x,y,z}
+        """
+        # STEP 1: Create 3D quantum circuit directly from parameters
+        qc = self.create_quantum_circuit_3d_parametric(mu_x, mu_y, mu_z, T)
+        
+        # STEP 2: Compile circuit for quantum simulator
+        simulator = AerSimulator()
+        pass_manager = generate_preset_pass_manager(1, simulator)
+        qc_compiled = pass_manager.run(qc)
+        
+        # STEP 3: Execute quantum circuit
+        job = simulator.run(qc_compiled, shots=shots)
+        result = job.result()
+        counts = result.get_counts()
+        
+        # STEP 4: Decode 6-qubit measurements to 3D velocity tuples
+        return self._decode_quantum_counts_3d(counts)
+
+    def compute_moments_from_samples_3d(
+        self, 
+        velocity_counts: Dict[Tuple[int, int, int], int]
+    ) -> Dict[str, float]:
+        """
+        Compute statistical moments from 3D velocity samples.
+        
+        COMPUTED MOMENTS:
+        For each dimension (x, y, z):
+        - mean_x, mean_y, mean_z: E[vᵢ] = Σ vᵢ * P(vᵢ)
+        - var_x, var_y, var_z: Var[vᵢ] = E[vᵢ²] - E[vᵢ]²
+        
+        These moments characterize the distribution without requiring
+        all 27 individual probabilities.
+        
+        VALIDATION STRATEGY:
+        Compare empirical moments from quantum samples against theoretical
+        moments computed from Maxwell-Boltzmann parameters.
+        
+        INPUT:
+        velocity_counts: {(vₓ, vᵧ, vᵧ): count} from quantum measurements
+        
+        OUTPUT:
+        Dictionary with keys: 'mean_x', 'mean_y', 'mean_z', 'var_x', 'var_y', 'var_z'
+        """
+        total_shots = sum(velocity_counts.values())
+        
+        if total_shots == 0:
+            return {
+                'mean_x': 0.0, 'mean_y': 0.0, 'mean_z': 0.0,
+                'var_x': 0.0, 'var_y': 0.0, 'var_z': 0.0
+            }
+        
+        # Compute means for each dimension
+        mean_x = sum(vx * count for (vx, _, _), count in velocity_counts.items()) / total_shots
+        mean_y = sum(vy * count for (_, vy, _), count in velocity_counts.items()) / total_shots
+        mean_z = sum(vz * count for (_, _, vz), count in velocity_counts.items()) / total_shots
+        
+        # Compute second moments E[vᵢ²]
+        mean_x2 = sum(vx**2 * count for (vx, _, _), count in velocity_counts.items()) / total_shots
+        mean_y2 = sum(vy**2 * count for (_, vy, _), count in velocity_counts.items()) / total_shots
+        mean_z2 = sum(vz**2 * count for (_, _, vz), count in velocity_counts.items()) / total_shots
+        
+        # Compute variances: Var[vᵢ] = E[vᵢ²] - E[vᵢ]²
+        var_x = mean_x2 - mean_x**2
+        var_y = mean_y2 - mean_y**2
+        var_z = mean_z2 - mean_z**2
+        
+        return {
+            'mean_x': mean_x,
+            'mean_y': mean_y,
+            'mean_z': mean_z,
+            'var_x': var_x,
+            'var_y': var_y,
+            'var_z': var_z
+        }
+    
+    def compute_theoretical_moments_3d(
+        self,
+        mu_x: float,
+        mu_y: float,
+        mu_z: float,
+        T: float
+    ) -> Dict[str, float]:
+        """
+        Compute theoretical moments from Maxwell-Boltzmann parameters.
+        
+        THEORETICAL FORMULAS:
+        For 1D discrete Gaussian with outcomes {-1, 0, +1}:
+        - E[v] = μ (by construction of discrete Gaussian)
+        - Var[v] = E[v²] - E[v]² 
+        
+        where E[v²] = Σ v² * P(v) computed from discrete Gaussian probabilities.
+        
+        INDEPENDENCE:
+        Since dimensions are independent:
+        - E[vₓ] = μₓ, E[vᵧ] = μᵧ, E[vᵧ] = μᵧ
+        - Var[vₓ], Var[vᵧ], Var[vᵧ] computed independently
+        
+        PARAMETERS:
+        - mu_x, mu_y, mu_z: mean velocities
+        - T: temperature (variance parameter)
+        
+        OUTPUT:
+        Dictionary with theoretical moment values
+        """
+        # For each dimension, compute moments using 1D discrete Gaussian
+        moments = {}
+        
+        for dim, mu in [('x', mu_x), ('y', mu_y), ('z', mu_z)]:
+            # Compute 1D probabilities for this dimension
+            probs_1d = self.discrete_gaussian_probs(mu, T)
+            p_minus1, p_0, p_plus1 = probs_1d
+            
+            # Theoretical mean: E[v] = Σ v * P(v)
+            mean = (-1) * p_minus1 + 0 * p_0 + (+1) * p_plus1
+            
+            # Theoretical second moment: E[v²] = Σ v² * P(v)
+            mean_v2 = (-1)**2 * p_minus1 + 0**2 * p_0 + (+1)**2 * p_plus1
+            
+            # Theoretical variance: Var[v] = E[v²] - E[v]²
+            variance = mean_v2 - mean**2
+            
+            moments[f'mean_{dim}'] = mean
+            moments[f'var_{dim}'] = variance
+        
+        return moments
+
+    def compute_moments_lbm_style(
+        self,
+        probs_27: np.ndarray
+    ) -> Dict[str, float]:
+        """
+        Compute macroscopic moments from 27 probabilities using LBM formulas.
+        
+        STANDARD LBM MOMENT COMPUTATION:
+        ρ = Σᵢ fᵢ                    (density)
+        ρuₓ = Σᵢ fᵢ cᵢₓ               (momentum x)
+        ρuᵧ = Σᵢ fᵢ cᵢᵧ               (momentum y)
+        ρuᵧ = Σᵢ fᵢ cᵢᵧ               (momentum z)
+        
+        For probability distribution (ρ = 1):
+        uₓ = Σᵢ₌₀²⁶ fᵢ cᵢₓ
+        uᵧ = Σᵢ₌₀²⁶ fᵢ cᵢᵧ
+        uᵧ = Σᵢ₌₀²⁶ fᵢ cᵢᵧ
+        
+        SECOND MOMENTS (for variance):
+        Var[uₓ] = Σᵢ fᵢ cᵢₓ² - (Σᵢ fᵢ cᵢₓ)²
+        Var[uᵧ] = Σᵢ fᵢ cᵢᵧ² - (Σᵢ fᵢ cᵢᵧ)²
+        Var[uᵧ] = Σᵢ fᵢ cᵢᵧ² - (Σᵢ fᵢ cᵢᵧ)²
+        
+        PARAMETERS:
+        - probs_27: Probability distribution in D3Q27 ordering (27 elements)
+        
+        RETURNS:
+        Dictionary with moments: 'mean_x', 'mean_y', 'mean_z', 'var_x', 'var_y', 'var_z'
+        
+        USAGE:
+        ```python
+        # From theoretical probabilities
+        probs_27 = qdg.compute_3d_probability_distribution_lbm_order(mu_x, mu_y, mu_z, T)
+        moments = qdg.compute_moments_lbm_style(probs_27)
+        
+        # From quantum samples
+        velocity_counts = qdg.quantum_sample_grid_point_3d_parametric(mu_x, mu_y, mu_z, T)
+        probs_27 = qdg.convert_quantum_samples_to_lbm_order(velocity_counts)
+        moments = qdg.compute_moments_lbm_style(probs_27)
+        ```
+        """
+        # Get D3Q27 velocity components
+        vX, vY, vZ = self.get_d3q27_velocity_ordering()
+        
+        # Compute density (should be 1.0 for normalized probabilities)
+        rho = np.sum(probs_27)
+        
+        # First moments: uᵢ = Σ fⱼ cⱼᵢ
+        mean_x = np.sum(probs_27 * vX) / rho
+        mean_y = np.sum(probs_27 * vY) / rho
+        mean_z = np.sum(probs_27 * vZ) / rho
+        
+        # Second moments: E[cᵢ²] = Σ fⱼ cⱼᵢ²
+        mean_x2 = np.sum(probs_27 * vX**2) / rho
+        mean_y2 = np.sum(probs_27 * vY**2) / rho
+        mean_z2 = np.sum(probs_27 * vZ**2) / rho
+        
+        # Variance: Var[uᵢ] = E[cᵢ²] - E[cᵢ]²
+        var_x = mean_x2 - mean_x**2
+        var_y = mean_y2 - mean_y**2
+        var_z = mean_z2 - mean_z**2
+        
+        return {
+            'mean_x': mean_x,
+            'mean_y': mean_y,
+            'mean_z': mean_z,
+            'var_x': var_x,
+            'var_y': var_y,
+            'var_z': var_z,
+            'rho': rho
+        }
+
+    def get_d3q27_velocity_ordering(self):
+        """
+        Return D3Q27 lattice velocity ordering for LBM integration.
+        
+        LATTICE STRUCTURE:
+        - SC (Simple Cubic): 6 velocities (face neighbors)
+        - FCC (Face-Centered Cubic): 12 velocities (edge neighbors)
+        - BCC (Body-Centered Cubic): 8 velocities (corner neighbors)
+        - Rest: 1 velocity (center)
+        Total: 27 velocities
+        
+        ORDERING:
+        Index 0: (0, 0, 0) - rest particle
+        Index 1-6: SC stencil (±1 on single axis)
+        Index 7-18: FCC stencil (±1 on two axes, 0 on third)
+        Index 19-26: BCC stencil (±1 on all three axes)
+        
+        RETURNS:
+        Tuple of three arrays (vX, vY, vZ) each with 27 elements
+        """
+        cSC1 = 1
+        cFCC1 = 1
+        cBCC1 = 1
+        
+        vX = np.array([0, cSC1, -cSC1, 0, 0, 0, 0, cFCC1, -cFCC1, cFCC1, -cFCC1, 
+                       cFCC1, -cFCC1, cFCC1, -cFCC1, 0, 0, 0, 0, cBCC1, -cBCC1, 
+                       cBCC1, -cBCC1, cBCC1, -cBCC1, cBCC1, -cBCC1])
+        
+        vY = np.array([0, 0, 0, cSC1, -cSC1, 0, 0, cFCC1, -cFCC1, -cFCC1, cFCC1, 
+                       0, 0, 0, 0, cFCC1, -cFCC1, cFCC1, -cFCC1, cBCC1, -cBCC1, 
+                       -cBCC1, cBCC1, -cBCC1, cBCC1, cBCC1, -cBCC1])
+        
+        vZ = np.array([0, 0, 0, 0, 0, cSC1, -cSC1, 0, 0, 0, 0, cFCC1, -cFCC1, 
+                       -cFCC1, cFCC1, cFCC1, -cFCC1, -cFCC1, cFCC1, cBCC1, -cBCC1, 
+                       cBCC1, -cBCC1, -cBCC1, cBCC1, -cBCC1, cBCC1])
+        
+        return vX, vY, vZ
+    
+    def compute_3d_probability_distribution_lbm_order(
+        self, 
+        mu_x: float, 
+        mu_y: float, 
+        mu_z: float, 
+        T: float
+    ) -> np.ndarray:
+        """
+        Compute all 27 probabilities in D3Q27 LBM ordering.
+        
+        This function computes the theoretical probability distribution for 3D
+        discrete Maxwell-Boltzmann velocities and returns them in the standard
+        D3Q27 lattice ordering used in your LBM code.
+        
+        PROBABILITY COMPUTATION:
+        Uses independence: P(vₓ, vᵧ, vᵧ) = P(vₓ) × P(vᵧ) × P(vᵧ)
+        
+        ORDERING:
+        Matches your LBM code's velocity sequence:
+        [0]: (0,0,0), [1]: (+1,0,0), [2]: (-1,0,0), etc.
+        
+        PARAMETERS:
+        - mu_x, mu_y, mu_z: mean velocities in each direction
+        - T: temperature/variance
+        
+        RETURNS:
+        np.ndarray with shape (27,): probabilities in LBM ordering
+        
+        USAGE EXAMPLE:
+        ```python
+        # In your LBM code:
+        qdg = QuantumDiscreteGaussian(circuit_type='symmetric')
+        probs = qdg.compute_3d_probability_distribution_lbm_order(mu_x, mu_y, mu_z, T)
+        # probs[i] is the probability for velocity direction i
+        ```
+        """
+        # Get 1D probabilities for each dimension
+        probs_x = self.discrete_gaussian_probs(mu_x, T)  # [P(-1), P(0), P(+1)]
+        probs_y = self.discrete_gaussian_probs(mu_y, T)
+        probs_z = self.discrete_gaussian_probs(mu_z, T)
+        
+        # Create mapping from velocity value to probability index
+        # P(-1) at index 0, P(0) at index 1, P(+1) at index 2
+        prob_map = {-1: 0, 0: 1, 1: 2}
+        
+        # Get D3Q27 velocity ordering
+        vX, vY, vZ = self.get_d3q27_velocity_ordering()
+        
+        # Compute joint probabilities for all 27 directions
+        probs_27 = np.zeros(27)
+        for i in range(27):
+            # Get velocity components for this direction
+            vx = vX[i]
+            vy = vY[i]
+            vz = vZ[i]
+            
+            # Lookup 1D probabilities and multiply (independence)
+            px = probs_x[prob_map[vx]]
+            py = probs_y[prob_map[vy]]
+            pz = probs_z[prob_map[vz]]
+            
+            probs_27[i] = px * py * pz
+        
+        return probs_27
+    
+    def convert_quantum_samples_to_lbm_order(
+        self,
+        velocity_counts: Dict[Tuple[int, int, int], int]
+    ) -> np.ndarray:
+        """
+        Convert quantum velocity samples to LBM probability array.
+        
+        Takes the dictionary output from quantum_sample_grid_point_3d_parametric()
+        and converts it to a 27-element probability array in D3Q27 LBM ordering.
+        
+        PARAMETERS:
+        - velocity_counts: {(vₓ, vᵧ, vᵧ): count} from quantum sampling
+        
+        RETURNS:
+        np.ndarray with shape (27,): empirical probabilities in LBM ordering
+        
+        USAGE EXAMPLE:
+        ```python
+        # Quantum sampling
+        velocity_counts = qdg.quantum_sample_grid_point_3d_parametric(mu_x, mu_y, mu_z, T, shots=5000)
+        
+        # Convert to LBM format
+        probs_lbm = qdg.convert_quantum_samples_to_lbm_order(velocity_counts)
+        
+        # Now probs_lbm[i] matches your LBM code's velocity[i]
+        ```
+        """
+        total_shots = sum(velocity_counts.values())
+        
+        if total_shots == 0:
+            return np.zeros(27)
+        
+        # Get D3Q27 velocity ordering
+        vX, vY, vZ = self.get_d3q27_velocity_ordering()
+        
+        # Convert counts to probabilities in LBM ordering
+        probs_27 = np.zeros(27)
+        for i in range(27):
+            velocity_tuple = (vX[i], vY[i], vZ[i])
+            count = velocity_counts.get(velocity_tuple, 0)
+            probs_27[i] = count / total_shots
+        
+        return probs_27
+
 
     def _decode_quantum_counts_original(self, counts: Dict[str, int]) -> Dict[int, int]:
         """Convert raw Qiskit bitstring counts into outcome buckets {-1, 0, 1}.
@@ -630,6 +1201,81 @@ class QuantumDiscreteGaussian:
                 elif qubit0_bit == '1' and qubit1_bit == '0':
                     outcome_counts[0] += count  # Changed: |10⟩ → 0
         return outcome_counts
+    
+    def _decode_quantum_counts_3d(self, counts: Dict[str, int]) -> Dict[Tuple[int, int, int], int]:
+        """
+        Decode 6-qubit measurement results to 3D velocity tuples.
+        
+        ENCODING SCHEME (per 2-qubit pair):
+        - |00⟩ → -1
+        - |01⟩ → +1
+        - |10⟩ → 0
+        - |11⟩ → unused
+        
+        QUBIT MAPPING:
+        - Qubits 0-1: vₓ component
+        - Qubits 2-3: vᵧ component
+        - Qubits 4-5: vᵧ component
+        
+        QISKIT BIT ORDER:
+        Measurement string is reversed: bit 5 is leftmost, bit 0 is rightmost
+        Example: '010001' means qubit[5]=0, qubit[4]=1, ..., qubit[0]=1
+        
+        OUTPUT:
+        Dictionary mapping (vₓ, vᵧ, vᵧ) tuples to counts
+        Example: {(-1, 0, +1): 235, (0, 0, 0): 189, ...}
+        """
+        velocity_counts = {}
+        
+        for bitstring, count in counts.items():
+            if len(bitstring) >= 6:
+                # Qiskit bit order: bit[5] bit[4] bit[3] bit[2] bit[1] bit[0]
+                # Extract bits for each dimension (remember: rightmost = qubit 0)
+                
+                # X-component (qubits 0-1): rightmost 2 bits
+                qubit0 = bitstring[5]  # bit[0] in Qiskit ordering
+                qubit1 = bitstring[4]  # bit[1] in Qiskit ordering
+                
+                if qubit0 == '0' and qubit1 == '0':
+                    vx = -1
+                elif qubit0 == '0' and qubit1 == '1':
+                    vx = 1
+                elif qubit0 == '1' and qubit1 == '0':
+                    vx = 0
+                else:  # '11' - unused state
+                    continue
+                
+                # Y-component (qubits 2-3): middle 2 bits
+                qubit2 = bitstring[3]  # bit[2] in Qiskit ordering
+                qubit3 = bitstring[2]  # bit[3] in Qiskit ordering
+                
+                if qubit2 == '0' and qubit3 == '0':
+                    vy = -1
+                elif qubit2 == '0' and qubit3 == '1':
+                    vy = 1
+                elif qubit2 == '1' and qubit3 == '0':
+                    vy = 0
+                else:  # '11' - unused state
+                    continue
+                
+                # Z-component (qubits 4-5): leftmost 2 bits
+                qubit4 = bitstring[1]  # bit[4] in Qiskit ordering
+                qubit5 = bitstring[0]  # bit[5] in Qiskit ordering
+                
+                if qubit4 == '0' and qubit5 == '0':
+                    vz = -1
+                elif qubit4 == '0' and qubit5 == '1':
+                    vz = 1
+                elif qubit4 == '1' and qubit5 == '0':
+                    vz = 0
+                else:  # '11' - unused state
+                    continue
+                
+                # Accumulate counts for this velocity tuple
+                velocity_tuple = (vx, vy, vz)
+                velocity_counts[velocity_tuple] = velocity_counts.get(velocity_tuple, 0) + count
+        
+        return velocity_counts
     
     def _decode_quantum_counts(self, counts: Dict[str, int]) -> Dict[int, int]:
         """
