@@ -67,6 +67,34 @@ class QuantumDiscreteGaussian:
         # RESULT: [P(-1), P(0), P(1)] - classical probability distribution
         return normalized_probs
     
+    def standardLattice_discrete_gaussian_probs(self, mu: float, sigma_sq: float) -> np.ndarray:
+        """
+        Calculate classical discrete Gaussian probabilities for outcomes {-1, 0, 1}
+        
+        MATHEMATICAL FOUNDATION:
+        Reference: https://doi.org/10.3929/ethz-b-000607045
+        Using the product form of Maxwell Boltzmann distribution:
+        p = u*u + (P/rho)
+        p = u*u + T
+        psi(c) = c * 0.5 * u + std::abs(c) * (1.50 * p - 1.0) - p + 1.0;
+        psi(-1) = -0.5 * u + 0.5 * p
+        psi(+1) = +0.5 * u + 0.5 * p
+        psi(0)  = - p + 1 
+
+        This classical calculation serves as the "ground truth" for our quantum implementation.
+        """
+        p= mu * mu + sigma_sq
+        
+        normalized_probs = np.array([-0.5 * mu + 0.5 * p,  - p + 1.0,  +0.5 * mu + 0.5 * p     
+        ])
+        
+        # RESULT: [P(-1), P(0), P(1)] - classical probability distribution
+        return normalized_probs
+    
+    #wrapper to select discrete gaussian probability calculation method
+    def discrete_gaussian_probs(self, mu: float, sigma_sq: float) -> np.ndarray:
+        return self.standardLattice_discrete_gaussian_probs(mu, sigma_sq)
+
 
     
     def create_quantum_circuit(self, probs: np.ndarray) -> QuantumCircuit:
@@ -222,7 +250,7 @@ class QuantumDiscreteGaussian:
         # STEP 1: CLASSICAL PREPROCESSING
         # Calculate the target discrete Gaussian probabilities for this grid point
         # This gives us the classical "ground truth" that our quantum circuit should reproduce
-        probs = self.classical_discrete_gaussian_probs(mu, sigma_sq)
+        probs = self.discrete_gaussian_probs(mu, sigma_sq)
         
         # STEP 2: QUANTUM CIRCUIT CREATION  
         # Convert classical probabilities into quantum circuit using amplitude encoding
@@ -267,7 +295,7 @@ class QuantumDiscreteGaussian:
         means, variances = self.compute_parameters()
         mu = means[grid_point]
         sigma_sq = variances[grid_point]
-        probs = self.classical_discrete_gaussian_probs(mu, sigma_sq)
+        probs = self.discrete_gaussian_probs(mu, sigma_sq)
         qc = self.create_quantum_circuit(probs)
         
         print(f"Grid Point {grid_point}: μ={mu:.4f}, σ²={sigma_sq:.4f}")
@@ -306,7 +334,7 @@ class QuantumDiscreteGaussian:
         for i in range(self.grid_size):
             mu = means[i]
             sigma_sq = variances[i]
-            theoretical = self.classical_discrete_gaussian_probs(mu, sigma_sq)
+            theoretical = self.discrete_gaussian_probs(mu, sigma_sq)
 
             qc = self.create_quantum_circuit(theoretical)
             qc.name = f"grid_point_{i}"
@@ -409,11 +437,11 @@ class QuantumDiscreteGaussian:
                 prob_matrix_quantum[i, 2] = results[i][1] / total_shots   # P(1)
             else:
                 # Use theoretical probabilities if no measurements
-                theoretical_probs = self.classical_discrete_gaussian_probs(means[i], variances[i])
+                theoretical_probs = self.discrete_gaussian_probs(means[i], variances[i])
                 prob_matrix_quantum[i, :] = theoretical_probs
             
             # Theoretical probabilities
-            theoretical_probs = self.classical_discrete_gaussian_probs(means[i], variances[i])
+            theoretical_probs = self.discrete_gaussian_probs(means[i], variances[i])
             prob_matrix_theoretical[i, :] = theoretical_probs
         
         # Plot 2: Line plots of all probabilities across grid
