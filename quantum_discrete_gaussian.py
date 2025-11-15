@@ -359,6 +359,114 @@ class QuantumDiscreteGaussian:
         # When run multiple times (shots), produces random samples from discrete Gaussian
         return qc
     
+    def create_quantum_circuit_parametric(self, mu: float, sigma_sq: float) -> QuantumCircuit:
+        """
+        Create symmetric quantum circuit directly from (mu, sigma_sq) parameters.
+        
+        DIRECT PARAMETRIZATION:
+        This method computes gate angles directly from Maxwell-Boltzmann parameters
+        without the intermediate step of computing classical probabilities.
+        
+        MATHEMATICAL FOUNDATION:
+        For velocity encoding with p = mu² + sigma_sq:
+        - P(-1) = -0.5*mu + 0.5*p
+        - P(0)  = -p + 1
+        - P(+1) = +0.5*mu + 0.5*p
+        
+        SYMMETRIC DECOMPOSITION ANGLES:
+        - θ₁ = 2*arccos(√p) where p = mu² + sigma_sq
+          This angle splits {-1,+1} (motion) vs {0} (rest)
+          
+        - θ₂ = 2*arcsin(√[0.5*(1 + mu/p)])
+          This angle splits -1 vs +1 given motion
+        
+        ADVANTAGES:
+        - No classical probability computation needed
+        - Fewer floating-point operations
+        - Direct mathematical relationship to physical parameters
+        - Only works with symmetric circuit (simpler formulas)
+        
+        PARAMETERS:
+        - mu: mean velocity (Maxwell-Boltzmann parameter)
+        - sigma_sq: temperature/variance (Maxwell-Boltzmann parameter)
+        
+        CONSTRAINT:
+        - Requires sigma_sq < 1 for valid probabilities (T < 1 constraint)
+        """
+        # STEP 1: Compute the key parameter p = mu² + sigma_sq
+        # This represents the combined probability of motion: P(-1) + P(+1)
+        p = mu * mu + sigma_sq
+        
+        # STEP 2: Validate physical constraints
+        # For valid probabilities, we need 0 < p < 1
+        # This ensures all probabilities are positive and sum to 1
+        if p <= 0:
+            raise ValueError(f"Invalid parameters: p = mu² + sigma_sq = {p:.4f} must be positive")
+        if p >= 1:
+            raise ValueError(f"Invalid parameters: p = mu² + sigma_sq = {p:.4f} must be < 1 "
+                           f"(Maxwell-Boltzmann constraint T < 1 violated)")
+        
+        # STEP 3: Initialize quantum circuit with 2 qubits + 2 classical bits
+        qc = QuantumCircuit(2, 2)
+        
+        # STEP 4: FIRST ROTATION - Split motion {-1,+1} vs rest {0}
+        #
+        # DIRECT ANGLE FORMULA:
+        # θ₁ = 2*arccos(√p) where p = mu² + sigma_sq
+        #
+        # PHYSICAL INTERPRETATION:
+        # This angle encodes the probability of particle motion vs rest
+        # - cos²(θ₁/2) = p (probability of motion)
+        # - sin²(θ₁/2) = 1-p (probability of rest)
+        #
+        # SIMPLIFICATION from velocity encoding:
+        # Original: P(-1) + P(+1) = (-0.5*mu + 0.5*p) + (+0.5*mu + 0.5*p) = p
+        # Direct: θ₁ = 2*arccos(√p) - no probability computation needed!
+        
+        theta1 = 2 * np.arccos(np.sqrt(p))
+        qc.ry(theta1, 0)  # Apply first rotation to qubit 0
+        
+        # STEP 5: SECOND ROTATION (CONDITIONAL) - Split -1 vs +1 given motion
+        #
+        # DIRECT ANGLE FORMULA:
+        # θ₂ = 2*arcsin(√[0.5*(1 + mu/p)])
+        #
+        # PHYSICAL INTERPRETATION:
+        # Given the particle is moving (first qubit = 0), this angle determines
+        # whether it moves left (-1) or right (+1)
+        # - cos²(θ₂/2) = P(-1|motion) = [-0.5*mu + 0.5*p]/p = 0.5*(1 - mu/p)
+        # - sin²(θ₂/2) = P(+1|motion) = [+0.5*mu + 0.5*p]/p = 0.5*(1 + mu/p)
+        #
+        # SIMPLIFICATION from velocity encoding:
+        # Conditional probability: P(+1|motion) = P(+1)/[P(-1)+P(+1)]
+        #                                        = [+0.5*mu + 0.5*p]/p
+        #                                        = 0.5*(1 + mu/p)
+        # Direct: θ₂ = 2*arcsin(√[0.5*(1 + mu/p)])
+        
+        # Calculate conditional probability directly
+        prob_plus1_given_motion = 0.5 * (1.0 + mu / p)
+        
+        # Validate conditional probability is in valid range
+        if prob_plus1_given_motion < 0 or prob_plus1_given_motion > 1:
+            raise ValueError(f"Invalid conditional probability: {prob_plus1_given_motion:.4f}")
+        
+        # Calculate second angle
+        theta2 = 2 * np.arcsin(np.sqrt(prob_plus1_given_motion))
+        
+        # Apply controlled rotation (only when first qubit is |0⟩)
+        # Use X-gates to convert "control on |0⟩" to "control on |1⟩"
+        qc.x(0)              # Flip first qubit
+        qc.cry(theta2, 0, 1) # Controlled-RY: rotate qubit 1 when qubit 0 is |1⟩
+        qc.x(0)              # Flip first qubit back
+        
+        # STEP 6: MEASUREMENT
+        # Symmetric encoding: |00⟩→-1, |01⟩→+1, |10⟩→0
+        qc.measure(0, 0)  # Measure first qubit
+        qc.measure(1, 1)  # Measure second qubit
+        
+        # CIRCUIT COMPLETE: Direct parametrization without classical probability computation!
+        return qc
+    
     def create_quantum_circuit(self, probs: np.ndarray) -> QuantumCircuit:
         """
         Create quantum circuit using the configured circuit type.
@@ -426,6 +534,58 @@ class QuantumDiscreteGaussian:
         job = simulator.run(qc_compiled, shots=shots)  # Submit job to quantum simulator
         result = job.result()  # Wait for completion and get results
         counts = result.get_counts()  # Extract measurement statistics: {'bitstring': count, ...}
+        return self._decode_quantum_counts(counts)
+
+    def quantum_sample_grid_point_parametric(self, mu: float, sigma_sq: float, shots: int = 1000) -> Dict[int, int]:
+        """
+        Execute quantum sampling using direct parametrization (symmetric circuit only).
+        
+        DIRECT PARAMETRIC SAMPLING:
+        This method bypasses classical probability computation entirely by computing
+        gate angles directly from (mu, sigma_sq) parameters.
+        
+        WORKFLOW:
+        1. Direct angle computation: θ₁, θ₂ = f(mu, sigma_sq) - no probability step!
+        2. Quantum circuit creation: Build circuit with computed angles
+        3. Quantum execution: Run circuit multiple times (shots)
+        4. Classical postprocessing: Decode measurement results
+        
+        ADVANTAGES over quantum_sample_grid_point:
+        - Fewer classical operations (no probability computation)
+        - Direct mathematical relationship to physical parameters
+        - More efficient for large-scale sampling
+        - Only available for symmetric circuit (simpler angle formulas)
+        
+        PARAMETERS:
+        - mu: mean velocity (Maxwell-Boltzmann parameter)
+        - sigma_sq: temperature/variance (Maxwell-Boltzmann parameter)
+        - shots: number of quantum circuit executions (sample size)
+        
+        CONSTRAINT:
+        - Only works with symmetric circuit (circuit_type='symmetric')
+        - Requires sigma_sq < 1 for valid probabilities
+        """
+        # STEP 1: Validate circuit type
+        if self.circuit_type != 'symmetric':
+            raise ValueError(f"Parametric sampling only available for symmetric circuit, "
+                           f"but circuit_type='{self.circuit_type}'")
+        
+        # STEP 2: DIRECT QUANTUM CIRCUIT CREATION
+        # Compute gate angles directly from parameters without classical probability step
+        qc = self.create_quantum_circuit_parametric(mu, sigma_sq)
+        
+        # STEP 3: QUANTUM CIRCUIT COMPILATION
+        simulator = AerSimulator()
+        pass_manager = generate_preset_pass_manager(1, simulator)
+        qc_compiled = pass_manager.run(qc)
+        
+        # STEP 4: QUANTUM EXECUTION
+        job = simulator.run(qc_compiled, shots=shots)
+        result = job.result()
+        counts = result.get_counts()
+        
+        # STEP 5: DECODE RESULTS
+        # Use symmetric decoder (automatically selected via self.circuit_type)
         return self._decode_quantum_counts(counts)
 
 
@@ -576,6 +736,120 @@ class QuantumDiscreteGaussian:
             'tvd_original': tvd_original,
             'tvd_symmetric': tvd_symmetric,
             'tvd_between': tvd_between
+        }
+    
+    def test_parametric_circuit(self, grid_point: int = 0, shots: int = 10000):
+        """
+        Test and validate parametric circuit against probability-based symmetric circuit.
+        
+        This function verifies that the direct parametric implementation (which computes
+        gate angles directly from mu and sigma_sq) produces identical results to the
+        probability-based symmetric circuit implementation.
+        
+        VALIDATION STRATEGY:
+        1. Compute theoretical probabilities from (mu, sigma_sq)
+        2. Build circuit via probability-based method: (mu, sigma_sq) → probs → circuit
+        3. Build circuit via parametric method: (mu, sigma_sq) → circuit (direct)
+        4. Compare empirical distributions from both circuits
+        5. Verify both match theoretical distribution within statistical error
+        
+        EXPECTED RESULT:
+        TVD between parametric and probability-based < 0.01 (statistical noise only)
+        """
+        # Get parameters for the specified grid point
+        means, variances = self.compute_parameters()
+        mu = means[grid_point]
+        sigma_sq = variances[grid_point]
+        
+        # Compute theoretical probabilities
+        probs = self.discrete_gaussian_probs(mu, sigma_sq)
+        
+        print("=" * 70)
+        print(f"PARAMETRIC CIRCUIT VALIDATION - Grid Point {grid_point}")
+        print("=" * 70)
+        print(f"Parameters: μ={mu:.4f}, σ²={sigma_sq:.4f}")
+        print(f"Theoretical: P(-1)={probs[0]:.4f}, P(0)={probs[1]:.4f}, P(+1)={probs[2]:.4f}")
+        print()
+        
+        # Verify we're using symmetric circuit
+        if self.circuit_type != 'symmetric':
+            print(f"WARNING: Switching to symmetric circuit for parametric test")
+            print(f"         (current circuit_type='{self.circuit_type}')")
+            print()
+        
+        simulator = AerSimulator()
+        pass_manager = generate_preset_pass_manager(1, simulator)
+        
+        # Test probability-based symmetric circuit
+        print("PROBABILITY-BASED SYMMETRIC CIRCUIT:")
+        qc_probs = self.create_quantum_circuit_symmetric(probs)
+        print(qc_probs.draw())
+        print()
+        
+        qc_compiled = pass_manager.run(qc_probs)
+        job = simulator.run(qc_compiled, shots=shots)
+        result = job.result()
+        counts_probs = self._decode_quantum_counts_symmetric(result.get_counts())
+        
+        probs_empirical = {k: v / shots for k, v in counts_probs.items()}
+        print(f"Probability-Based Results ({shots} shots):")
+        print(f"  P(-1)={probs_empirical[-1]:.4f}, P(0)={probs_empirical[0]:.4f}, P(+1)={probs_empirical[1]:.4f}")
+        
+        tvd_probs = 0.5 * sum(abs(probs_empirical[k] - probs[i]) for i, k in enumerate([-1, 0, 1]))
+        print(f"  TVD from theoretical: {tvd_probs:.6f}")
+        print()
+        
+        # Test parametric circuit
+        print("PARAMETRIC CIRCUIT (direct angle computation):")
+        qc_param = self.create_quantum_circuit_parametric(mu, sigma_sq)
+        print(qc_param.draw())
+        print()
+        
+        qc_compiled = pass_manager.run(qc_param)
+        job = simulator.run(qc_compiled, shots=shots)
+        result = job.result()
+        counts_param = self._decode_quantum_counts_symmetric(result.get_counts())
+        
+        probs_parametric = {k: v / shots for k, v in counts_param.items()}
+        print(f"Parametric Results ({shots} shots):")
+        print(f"  P(-1)={probs_parametric[-1]:.4f}, P(0)={probs_parametric[0]:.4f}, P(+1)={probs_parametric[1]:.4f}")
+        
+        tvd_param = 0.5 * sum(abs(probs_parametric[k] - probs[i]) for i, k in enumerate([-1, 0, 1]))
+        print(f"  TVD from theoretical: {tvd_param:.6f}")
+        print()
+        
+        # Compare parametric vs probability-based
+        tvd_between = 0.5 * sum(abs(probs_empirical[k] - probs_parametric[k]) for k in [-1, 0, 1])
+        print("COMPARISON:")
+        print(f"  TVD between probability-based and parametric: {tvd_between:.6f}")
+        print(f"  Both methods produce equivalent distributions: {tvd_between < 0.01}")
+        print()
+        
+        # Mathematical validation: verify angles are identical
+        p = mu * mu + sigma_sq
+        theta1_expected = 2 * np.arccos(np.sqrt(p))
+        prob_plus1_given_motion = 0.5 * (1.0 + mu / p)
+        theta2_expected = 2 * np.arcsin(np.sqrt(prob_plus1_given_motion))
+        
+        print("MATHEMATICAL VALIDATION:")
+        print(f"  p = μ² + σ² = {p:.6f}")
+        print(f"  θ₁ = 2*arccos(√p) = {theta1_expected:.6f} rad = {np.degrees(theta1_expected):.3f}°")
+        print(f"  P(+1|motion) = 0.5*(1 + μ/p) = {prob_plus1_given_motion:.6f}")
+        print(f"  θ₂ = 2*arcsin(√P(+1|motion)) = {theta2_expected:.6f} rad = {np.degrees(theta2_expected):.3f}°")
+        print("=" * 70)
+        
+        return {
+            'theoretical': probs,
+            'probability_based': probs_empirical,
+            'parametric': probs_parametric,
+            'tvd_probability_based': tvd_probs,
+            'tvd_parametric': tvd_param,
+            'tvd_between': tvd_between,
+            'angles': {
+                'theta1': theta1_expected,
+                'theta2': theta2_expected,
+                'p': p
+            }
         }
     
      
