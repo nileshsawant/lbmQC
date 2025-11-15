@@ -16,10 +16,15 @@ from qiskit.transpiler.preset_passmanagers import generate_preset_pass_manager
 from typing import Tuple, Dict, Optional
 
 class QuantumDiscreteGaussian:
-    def __init__(self, grid_size: int = 10):
+    def __init__(self, grid_size: int = 10, circuit_type: str = 'symmetric'):
         self.grid_size = grid_size
         self.T0 = 1/3  # Base variance
         self.outcomes = [-1, 0, 1]
+        self.circuit_type = circuit_type  # Track which circuit implementation to use
+        
+        # Validate circuit type
+        if circuit_type not in ['symmetric', 'original']:
+            raise ValueError(f"circuit_type must be 'symmetric' or 'original', got '{circuit_type}'")
         
     def compute_parameters(self) -> Tuple[np.ndarray, np.ndarray]:
         """Compute mean and variance for each grid point"""
@@ -95,9 +100,136 @@ class QuantumDiscreteGaussian:
     def discrete_gaussian_probs(self, mu: float, sigma_sq: float) -> np.ndarray:
         return self.standardLattice_discrete_gaussian_probs(mu, sigma_sq)
 
+    
+    def create_quantum_circuit_symmetric(self, probs: np.ndarray) -> QuantumCircuit:
+        """
+        Symmetric quantum circuit with improved decomposition: {-1, +1} vs {0}
+        
+        QUANTUM COMPUTING FOUNDATION:
+        This implements a symmetric hierarchical decomposition that better matches
+        the symmetry of the velocity encoding formulas.
+        
+        MATHEMATICAL MAPPING:
+        Classical: P(-1), P(0), P(+1) ∈ [0,1] with P(-1) + P(0) + P(+1) = 1
+        Quantum:   |ψ⟩ = √P(-1)|00⟩ + √P(+1)|01⟩ + √P(0)|10⟩
+        
+        SYMMETRIC QUBIT ENCODING SCHEME:
+        - |00⟩ (both qubits in state 0) → outcome -1
+        - |01⟩ (first qubit 0, second qubit 1) → outcome +1
+        - |10⟩ (first qubit 1, second qubit 0) → outcome 0
+        - |11⟩ (both qubits in state 1) → unused
+        
+        ADVANTAGES OF THIS DECOMPOSITION:
+        - First qubit splits "moving" {-1, +1} vs "stationary" {0}
+        - Simpler angle formulas: θ₁ = 2*arccos(√(mu² + sigma_sq))
+        - Better captures physical symmetry of velocity distribution
+        - More numerically stable for velocity encoding
+        """
+        # STEP 1: Ensure probability normalization
+        probs = probs / np.sum(probs)
+        p_minus1, p_0, p_plus1 = probs  # Extract individual probabilities
+        
+        # STEP 2: Initialize quantum circuit with 2 qubits + 2 classical bits
+        qc = QuantumCircuit(2, 2)
+        
+        # STEP 3: HIERARCHICAL DECOMPOSITION - First Qubit (Coarse Splitting)
+        # 
+        # NEW QUANTUM STRATEGY: Split "moving particles" vs "stationary particles"
+        # Split the 3-outcome problem into: {-1, +1} vs {0}
+        # 
+        # MATHEMATICAL FOUNDATION:
+        # First qubit encodes: P(outcome ∈ {-1, +1}) vs P(outcome = 0)
+        # P(first qubit = 0) = P(-1) + P(+1) = combined probability of motion
+        # P(first qubit = 1) = P(0) = probability of rest
+        #
+        # For velocity encoding: P(-1) + P(+1) = p = mu² + sigma_sq
+        # This is MUCH simpler than the original decomposition!
+        #
+        # QUANTUM GATE SELECTION:
+        # RY gate (rotation around Y-axis): RY(θ)|0⟩ = cos(θ/2)|0⟩ + sin(θ/2)|1⟩
+        # We want: |cos(θ/2)|² = P(first=0) and |sin(θ/2)|² = P(first=1)
+        # Solving: cos²(θ/2) = prob_first_0 → θ = 2*arccos(√prob_first_0)
+        
+        prob_first_0 = p_minus1 + p_plus1  # Combined probability for {-1, +1} outcomes
+        
+        if prob_first_0 > 0 and prob_first_0 < 1:
+            # GENERAL CASE: Create superposition between motion and rest
+            theta1 = 2 * np.arccos(np.sqrt(prob_first_0))  # Calculate rotation angle
+            qc.ry(theta1, 0)  # Apply Y-rotation to first qubit
+            
+        elif prob_first_0 == 0:
+            # EDGE CASE: Only outcome 0 possible (P(-1)=P(+1)=0, P(0)=1)
+            qc.x(0)  # X gate: |0⟩ → |1⟩ (deterministic flip to rest state)
+            
+        # EDGE CASE: If prob_first_0 == 1, first qubit stays |0⟩ (no gates needed)
+        # This happens when P(0) = 0, so only {-1, +1} outcomes are possible
+        
+        # STEP 4: CONDITIONAL DECOMPOSITION - Second Qubit (Fine Splitting)
+        #
+        # QUANTUM STRATEGY: Conditional probability encoding for directional motion
+        # Given first qubit = 0 (we're in {-1, +1} subspace), distinguish between -1 and +1
+        #
+        # MATHEMATICAL FOUNDATION:  
+        # P(second=1 | first=0) = P(outcome=+1) / P(outcome∈{-1,+1}) = P(+1) / (P(-1) + P(+1))
+        # This uses conditional probability: P(A|B) = P(A∩B) / P(B)
+        # Here: A="second qubit is 1", B="first qubit is 0"
+        #
+        # For velocity encoding: P(+1|first=0) = 0.5*(1 + mu/(mu² + sigma_sq))
+        # This is symmetric around 0.5, reflecting the physical symmetry!
+        #
+        # QUANTUM IMPLEMENTATION:
+        # Use controlled-RY gate: only rotates second qubit when first qubit is in specific state
+        # CRY gate: applies RY rotation to target qubit conditioned on control qubit state
+        
+        if prob_first_0 > 1e-10:  # Only proceed if {-1,+1} outcomes are possible
+            
+            # Calculate conditional probability using Bayes' rule
+            prob_second_1_given_first_0 = p_plus1 / prob_first_0  # P(outcome=+1 | outcome∈{-1,+1})
+            
+            if prob_second_1_given_first_0 > 0 and prob_second_1_given_first_0 < 1:
+                # GENERAL CASE: Both -1 and +1 outcomes possible within {-1,+1} subspace
+                
+                # Calculate rotation angle for conditional probability
+                theta2 = 2 * np.arcsin(np.sqrt(prob_second_1_given_first_0))
+                
+                # QUANTUM TRICK: Convert "control on |0⟩" to "control on |1⟩"
+                # Most quantum gates control on |1⟩ state, but we need control on |0⟩
+                qc.x(0)              # X gate: |0⟩ ↔ |1⟩ (flip first qubit state)
+                qc.cry(theta2, 0, 1) # Controlled-RY: rotate qubit 1 when qubit 0 is |1⟩ (originally |0⟩)
+                qc.x(0)              # X gate: flip first qubit back to original state
+                
+            elif prob_second_1_given_first_0 == 1:
+                # EDGE CASE: Only outcome +1 possible when first qubit is |0⟩ (P(-1)=0, P(+1)>0)
+                qc.x(0)          # Flip first qubit: |0⟩ → |1⟩  
+                qc.cx(0, 1)      # CNOT gate: if control=|1⟩ (originally |0⟩), flip target qubit
+                qc.x(0)          # Restore first qubit to original state
+                
+            # EDGE CASE: If prob_second_1_given_first_0 == 0, second qubit stays |0⟩
+            # This happens when P(+1)=0 but P(-1)>0, so only -1 outcome possible in {-1,+1} subspace
+        
+        # STEP 5: QUANTUM MEASUREMENT
+        #
+        # NEW MEASUREMENT SCHEME:
+        # Measure both qubits simultaneously to get 2-bit classical string
+        # |00⟩ → classical bits "00" → decode to outcome -1  
+        # |01⟩ → classical bits "01" → decode to outcome +1  [CHANGED]
+        # |10⟩ → classical bits "10" → decode to outcome 0   [CHANGED]
+        # |11⟩ → classical bits "11" → unused (should have 0 probability)
+        #
+        # QISKIT CONVENTION:
+        # qc.measure(qubit_index, classical_bit_index) 
+        # Stores measurement result of quantum qubit in classical bit register
+        
+        qc.measure(0, 0)  # Measure first qubit → store result in classical bit 0
+        qc.measure(1, 1)  # Measure second qubit → store result in classical bit 1
+        
+        # CIRCUIT COMPLETE: Returns quantum circuit ready for execution
+        # This symmetric decomposition produces identical probability distributions
+        # but with simpler mathematical structure for velocity encoding
+        return qc
 
     
-    def create_quantum_circuit(self, probs: np.ndarray) -> QuantumCircuit:
+    def create_quantum_circuit_original(self, probs: np.ndarray) -> QuantumCircuit:
         """
         Create quantum circuit to generate discrete Gaussian distribution using amplitude encoding
         
@@ -227,6 +359,28 @@ class QuantumDiscreteGaussian:
         # When run multiple times (shots), produces random samples from discrete Gaussian
         return qc
     
+    def create_quantum_circuit(self, probs: np.ndarray) -> QuantumCircuit:
+        """
+        Create quantum circuit using the configured circuit type.
+        
+        This method automatically routes to the correct implementation based on
+        self.circuit_type (set in __init__):
+        - 'symmetric': {-1, +1} vs {0} decomposition (default, recommended)
+        - 'original': {-1, 0} vs {+1} decomposition
+        
+        The decoder will automatically match the circuit type, so users don't need
+        to manually track which decoder to use.
+        
+        The symmetric decomposition is preferred because it:
+        - Has simpler angle formulas
+        - Better captures physical symmetry
+        - Is more numerically stable for velocity encoding
+        """
+        if self.circuit_type == 'symmetric':
+            return self.create_quantum_circuit_symmetric(probs)
+        else:  # 'original'
+            return self.create_quantum_circuit_original(probs)
+    
     def quantum_sample_grid_point(self, mu: float, sigma_sq: float, shots: int = 1000) -> Dict[int, int]:
         """
         Execute quantum sampling for discrete Gaussian distribution at single grid point
@@ -275,8 +429,14 @@ class QuantumDiscreteGaussian:
         return self._decode_quantum_counts(counts)
 
 
-    def _decode_quantum_counts(self, counts: Dict[str, int]) -> Dict[int, int]:
-        """Convert raw Qiskit bitstring counts into outcome buckets {-1, 0, 1}."""
+    def _decode_quantum_counts_original(self, counts: Dict[str, int]) -> Dict[int, int]:
+        """Convert raw Qiskit bitstring counts into outcome buckets {-1, 0, 1}.
+        
+        ORIGINAL ENCODING (for create_quantum_circuit_original):
+        - |00⟩ → -1
+        - |01⟩ → 0
+        - |10⟩ → +1
+        """
         outcome_counts = {-1: 0, 0: 0, 1: 0}
         for bitstring, count in counts.items():
             if len(bitstring) >= 2:
@@ -290,6 +450,43 @@ class QuantumDiscreteGaussian:
                     outcome_counts[1] += count
         return outcome_counts
     
+    def _decode_quantum_counts_symmetric(self, counts: Dict[str, int]) -> Dict[int, int]:
+        """Convert raw Qiskit bitstring counts into outcome buckets {-1, 0, 1}.
+        
+        SYMMETRIC ENCODING (for create_quantum_circuit_symmetric):
+        - |00⟩ → -1
+        - |01⟩ → +1
+        - |10⟩ → 0
+        """
+        outcome_counts = {-1: 0, 0: 0, 1: 0}
+        for bitstring, count in counts.items():
+            if len(bitstring) >= 2:
+                qubit1_bit = bitstring[0]
+                qubit0_bit = bitstring[1]
+                if qubit0_bit == '0' and qubit1_bit == '0':
+                    outcome_counts[-1] += count
+                elif qubit0_bit == '0' and qubit1_bit == '1':
+                    outcome_counts[1] += count  # Changed: |01⟩ → +1
+                elif qubit0_bit == '1' and qubit1_bit == '0':
+                    outcome_counts[0] += count  # Changed: |10⟩ → 0
+        return outcome_counts
+    
+    def _decode_quantum_counts(self, counts: Dict[str, int]) -> Dict[int, int]:
+        """
+        Decode quantum measurement results using the configured circuit type.
+        
+        This method automatically routes to the correct decoder based on
+        self.circuit_type (set in __init__), ensuring the decoder always
+        matches the circuit implementation used.
+        
+        Users don't need to manually select the decoder - it's automatically
+        paired with the circuit type.
+        """
+        if self.circuit_type == 'symmetric':
+            return self._decode_quantum_counts_symmetric(counts)
+        else:  # 'original'
+            return self._decode_quantum_counts_original(counts)
+    
     def print_circuit_example(self, grid_point: int = 0):
         """Print the quantum circuit for a specific grid point"""
         means, variances = self.compute_parameters()
@@ -301,6 +498,85 @@ class QuantumDiscreteGaussian:
         print(f"Grid Point {grid_point}: μ={mu:.4f}, σ²={sigma_sq:.4f}")
         print(qc.draw())
         return qc
+    
+    def test_alternative_circuit(self, grid_point: int = 0, shots: int = 10000):
+        """
+        Test and compare both circuit implementations to verify they produce identical results.
+        
+        This function validates that the symmetric decomposition {-1,+1} vs {0}
+        produces the same probability distribution as the original decomposition {-1,0} vs {+1}.
+        
+        Note: This method temporarily overrides self.circuit_type to test both implementations.
+        """
+        means, variances = self.compute_parameters()
+        mu = means[grid_point]
+        sigma_sq = variances[grid_point]
+        
+        # Compute theoretical probabilities
+        probs = self.discrete_gaussian_probs(mu, sigma_sq)
+        
+        print("=" * 70)
+        print(f"CIRCUIT COMPARISON TEST - Grid Point {grid_point}")
+        print("=" * 70)
+        print(f"Parameters: μ={mu:.4f}, σ²={sigma_sq:.4f}")
+        print(f"Theoretical: P(-1)={probs[0]:.4f}, P(0)={probs[1]:.4f}, P(+1)={probs[2]:.4f}")
+        print()
+        
+        # Test original circuit
+        print("ORIGINAL CIRCUIT (decomposition: {-1,0} vs {+1}):")
+        qc_original = self.create_quantum_circuit_original(probs)
+        print(qc_original.draw())
+        print()
+        
+        simulator = AerSimulator()
+        pass_manager = generate_preset_pass_manager(1, simulator)
+        qc_compiled = pass_manager.run(qc_original)
+        job = simulator.run(qc_compiled, shots=shots)
+        result = job.result()
+        counts_original = self._decode_quantum_counts_original(result.get_counts())
+        
+        probs_original = {k: v / shots for k, v in counts_original.items()}
+        print(f"Original Circuit Results ({shots} shots):")
+        print(f"  P(-1)={probs_original[-1]:.4f}, P(0)={probs_original[0]:.4f}, P(+1)={probs_original[1]:.4f}")
+        
+        tvd_original = 0.5 * sum(abs(probs_original[k] - probs[i]) for i, k in enumerate([-1, 0, 1]))
+        print(f"  TVD from theoretical: {tvd_original:.6f}")
+        print()
+        
+        # Test symmetric circuit
+        print("SYMMETRIC CIRCUIT (decomposition: {-1,+1} vs {0}):")
+        qc_symmetric = self.create_quantum_circuit_symmetric(probs)
+        print(qc_symmetric.draw())
+        print()
+        
+        qc_compiled = pass_manager.run(qc_symmetric)
+        job = simulator.run(qc_compiled, shots=shots)
+        result = job.result()
+        counts_symmetric = self._decode_quantum_counts_symmetric(result.get_counts())
+        
+        probs_symmetric = {k: v / shots for k, v in counts_symmetric.items()}
+        print(f"Symmetric Circuit Results ({shots} shots):")
+        print(f"  P(-1)={probs_symmetric[-1]:.4f}, P(0)={probs_symmetric[0]:.4f}, P(+1)={probs_symmetric[1]:.4f}")
+        
+        tvd_symmetric = 0.5 * sum(abs(probs_symmetric[k] - probs[i]) for i, k in enumerate([-1, 0, 1]))
+        print(f"  TVD from theoretical: {tvd_symmetric:.6f}")
+        print()
+        
+        # Compare the two circuits
+        tvd_between = 0.5 * sum(abs(probs_original[k] - probs_symmetric[k]) for k in [-1, 0, 1])
+        print("COMPARISON:")
+        print(f"  TVD between original and symmetric: {tvd_between:.6f}")
+        print(f"  Both circuits produce equivalent distributions: {tvd_between < 0.01}")
+        print("=" * 70)
+        
+        return {
+            'theoretical': probs,
+            'original': probs_original,
+            'symmetric': probs_symmetric,
+            'tvd_original': tvd_original,
+            'tvd_symmetric': tvd_symmetric,
+            'tvd_between': tvd_between
+        }
     
      
     def quantum_parallel_grid_sampling(
