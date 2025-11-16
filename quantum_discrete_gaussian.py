@@ -186,6 +186,16 @@ class QuantumDiscreteGaussian:
     def discrete_gaussian_probs(self, mu: float, sigma_sq: float) -> np.ndarray:
         return self.standardLattice_discrete_gaussian_probs(mu, sigma_sq)
 
+    def _clamp01(self, x: float) -> float:
+        """Clamp numeric values into [0, 1] to avoid domain errors in sqrt/arccos/arcsin."""
+        if x != x:  # NaN
+            return 0.0
+        if x < 0.0:
+            return 0.0
+        if x > 1.0:
+            return 1.0
+        return x
+
     
     def create_quantum_circuit_symmetric(self, probs: np.ndarray) -> QuantumCircuit:
         """
@@ -236,13 +246,17 @@ class QuantumDiscreteGaussian:
         # This angle depends only on the combined parameter p, making it very stable!
         
         prob_first_0 = p_minus1 + p_plus1  # Combined probability for {-1, +1} outcomes
-        
-        if prob_first_0 > 0 and prob_first_0 < 1:
+
+        eps = 1e-12
+        # Clamp probability into [0,1] to be safe for sqrt/arccos
+        prob_first_0_clamped = self._clamp01(prob_first_0)
+
+        if prob_first_0 > eps and prob_first_0 < 1 - eps:
             # GENERAL CASE: Create superposition between motion and rest
-                theta1 = 2 * np.arccos(np.sqrt(prob_first_0))  # Calculate rotation angle
-                qc.ry(theta1, 0)  # Apply Y-rotation to first qubit
-            
-        elif prob_first_0 == 0:
+            theta1 = 2 * np.arccos(np.sqrt(prob_first_0_clamped))  # Calculate rotation angle
+            qc.ry(theta1, 0)  # Apply Y-rotation to first qubit
+
+        elif prob_first_0 <= eps:
             # EDGE CASE: Only outcome 0 possible (P(-1)=P(+1)=0, P(0)=1)
             qc.x(0)  # X gate: |0> -> |1> (deterministic flip to rest state)
             
@@ -270,48 +284,48 @@ class QuantumDiscreteGaussian:
         #
         # The control ensures this rotation applies only in the "moving" subspace!
         
-        if prob_first_0 > 1e-10:  # Only proceed if {-1,+1} outcomes are possible
-            
+        if prob_first_0 > eps:  # Only proceed if {-1,+1} outcomes are possible
             # Calculate conditional probability using Bayes' rule
             prob_second_1_given_first_0 = p_plus1 / prob_first_0  # P(outcome=+1 | outcome∈{-1,+1})
-            
-            if prob_second_1_given_first_0 > 0 and prob_second_1_given_first_0 < 1:
+            prob_second_1_clamped = self._clamp01(prob_second_1_given_first_0)
+
+            if prob_second_1_given_first_0 > eps and prob_second_1_given_first_0 < 1 - eps:
                 # GENERAL CASE: Both -1 and +1 outcomes possible within {-1,+1} subspace
-                
-                # Calculate rotation angle for conditional probability
-                theta2 = 2 * np.arcsin(np.sqrt(prob_second_1_given_first_0))
-                
+
+                # Calculate rotation angle for conditional probability (safe clamped input)
+                theta2 = 2 * np.arcsin(np.sqrt(prob_second_1_clamped))
+
                 # QUANTUM TRICK: Convert "control on |0⟩" to "control on |1⟩"
                 # Most quantum gates control on |1⟩ state, but we need control on |0⟩
-                qc.x(0)              # X gate: |0> <-> |1> (flip first qubit state)
-                qc.cry(theta2, 0, 1) # Controlled-RY: rotate qubit 1 when qubit 0 is |1> (originally |0>)
-                qc.x(0)              # X gate: flip first qubit back to original state
-                
-            elif prob_second_1_given_first_0 == 1:
+                qc.x(0)               # X gate: |0> <-> |1> (flip first qubit state)
+                qc.cry(theta2, 0, 1)  # Controlled-RY: rotate qubit 1 when qubit 0 is |1> (originally |0>)
+                qc.x(0)               # X gate: flip first qubit back to original state
+
+            elif prob_second_1_given_first_0 >= 1 - eps:
                 # EDGE CASE: Only outcome +1 possible when first qubit is |0⟩ (P(-1)=0, P(+1)>0)
-                qc.x(0)          # Flip first qubit: |0> -> |1>  
+                qc.x(0)          # Flip first qubit: |0> -> |1>
                 qc.cx(0, 1)      # CNOT gate: if control=|1> (originally |0>), flip target qubit
                 qc.x(0)          # Restore first qubit to original state
-                
+
             # EDGE CASE: If prob_second_1_given_first_0 == 0, second qubit stays |0⟩
             # This happens when P(+1)=0 but P(-1)>0, so only -1 outcome possible in {-1,+1} subspace
-        
+
         # STEP 5: QUANTUM MEASUREMENT
         #
-    # NEW MEASUREMENT SCHEME:
-    # Measure both qubits simultaneously to get 2-bit classical string
-    # |00> -> classical bits "00" -> decode to outcome -1
-    # |01> -> classical bits "01" -> decode to outcome +1  [CHANGED]
-    # |10> -> classical bits "10" -> decode to outcome 0   [CHANGED]
-    # |11> -> classical bits "11" -> unused (should have 0 probability)
+        # NEW MEASUREMENT SCHEME:
+        # Measure both qubits simultaneously to get 2-bit classical string
+        # |00> -> classical bits "00" -> decode to outcome -1
+        # |01> -> classical bits "01" -> decode to outcome +1  [CHANGED]
+        # |10> -> classical bits "10" -> decode to outcome 0   [CHANGED]
+        # |11> -> classical bits "11" -> unused (should have 0 probability)
         #
         # QISKIT CONVENTION:
         # qc.measure(qubit_index, classical_bit_index) 
         # Stores measurement result of quantum qubit in classical bit register
-        
+
         qc.measure(0, 0)  # Measure first qubit -> store result in classical bit 0
         qc.measure(1, 1)  # Measure second qubit -> store result in classical bit 1
-        
+
         # CIRCUIT COMPLETE: Returns quantum circuit ready for execution
         # This symmetric decomposition produces identical probability distributions
         # but with simpler mathematical structure for velocity encoding
@@ -512,7 +526,9 @@ class QuantumDiscreteGaussian:
         # Original: P(-1) + P(+1) = (-0.5*μ + 0.5*p) + (+0.5*μ + 0.5*p) = p
         # Direct: θ₁ = 2*arccos(√p) - no probability computation needed!
         
-        theta1 = 2 * np.arccos(np.sqrt(p))
+        # Clamp p into [0,1] before sqrt/arccos to guard against tiny FP errors
+        p_clamped = self._clamp01(p)
+        theta1 = 2 * np.arccos(np.sqrt(p_clamped))
         qc.ry(theta1, 0)  # Apply first rotation to qubit 0
         
         # STEP 5: SECOND ROTATION (CONDITIONAL) - Split -1 vs +1 given motion
@@ -534,14 +550,15 @@ class QuantumDiscreteGaussian:
         
         # Calculate conditional probability directly
         prob_plus1_given_motion = 0.5 * (1.0 + mu / p)
-        
+        prob_plus1_given_motion_clamped = self._clamp01(prob_plus1_given_motion)
+
         # Validate conditional probability is in valid range
         if prob_plus1_given_motion < 0 or prob_plus1_given_motion > 1:
             raise ValueError(f"Invalid conditional probability: {prob_plus1_given_motion:.4f}")
-        
+
         # Calculate second angle
-        theta2 = 2 * np.arcsin(np.sqrt(prob_plus1_given_motion))
-        
+        theta2 = 2 * np.arcsin(np.sqrt(prob_plus1_given_motion_clamped))
+
         # Apply controlled rotation (only when first qubit is |0⟩)
         # Use X-gates to convert "control on |0⟩" to "control on |1⟩"
         qc.x(0)              # Flip first qubit
@@ -609,12 +626,14 @@ class QuantumDiscreteGaussian:
             raise ValueError(f"Invalid parameters for X: p_x = mu_x² + sigma_sq = {p_x:.4f} must be < 1")
         
         # Calculate angles directly from parameters
-        theta1_x = 2 * np.arccos(np.sqrt(p_x))
+        p_x_clamped = self._clamp01(p_x)
+        theta1_x = 2 * np.arccos(np.sqrt(p_x_clamped))
         prob_plus1_x = 0.5 * (1.0 + mu_x / p_x)
-        
+        prob_plus1_x = self._clamp01(prob_plus1_x)
+
         if prob_plus1_x < 0 or prob_plus1_x > 1:
             raise ValueError(f"Invalid conditional probability for X: {prob_plus1_x:.4f}")
-        
+
         theta2_x = 2 * np.arcsin(np.sqrt(prob_plus1_x))
         
         # Apply gates to qubits 0-1
@@ -631,12 +650,14 @@ class QuantumDiscreteGaussian:
         if p_y >= 1:
             raise ValueError(f"Invalid parameters for Y: p_y = mu_y² + sigma_sq = {p_y:.4f} must be < 1")
         
-        theta1_y = 2 * np.arccos(np.sqrt(p_y))
+        p_y_clamped = self._clamp01(p_y)
+        theta1_y = 2 * np.arccos(np.sqrt(p_y_clamped))
         prob_plus1_y = 0.5 * (1.0 + mu_y / p_y)
-        
+        prob_plus1_y = self._clamp01(prob_plus1_y)
+
         if prob_plus1_y < 0 or prob_plus1_y > 1:
             raise ValueError(f"Invalid conditional probability for Y: {prob_plus1_y:.4f}")
-        
+
         theta2_y = 2 * np.arcsin(np.sqrt(prob_plus1_y))
         
         # Apply gates to qubits 2-3
@@ -653,12 +674,14 @@ class QuantumDiscreteGaussian:
         if p_z >= 1:
             raise ValueError(f"Invalid parameters for Z: p_z = mu_z² + sigma_sq = {p_z:.4f} must be < 1")
         
-        theta1_z = 2 * np.arccos(np.sqrt(p_z))
+        p_z_clamped = self._clamp01(p_z)
+        theta1_z = 2 * np.arccos(np.sqrt(p_z_clamped))
         prob_plus1_z = 0.5 * (1.0 + mu_z / p_z)
-        
+        prob_plus1_z = self._clamp01(prob_plus1_z)
+
         if prob_plus1_z < 0 or prob_plus1_z > 1:
             raise ValueError(f"Invalid conditional probability for Z: {prob_plus1_z:.4f}")
-        
+
         theta2_z = 2 * np.arcsin(np.sqrt(prob_plus1_z))
         
         # Apply gates to qubits 4-5
@@ -917,10 +940,10 @@ class QuantumDiscreteGaussian:
         
         where E[v²] = Σ v² * P(v) computed from discrete Gaussian probabilities.
         
-        INDEPENDENCE:
-        Since dimensions are independent:
-        - E[vₓ] = μₓ, E[vᵧ] = μᵧ, E[vᵧ] = μᵧ
-        - Var[vₓ], Var[vᵧ], Var[vᵧ] computed independently
+    INDEPENDENCE:
+    Since dimensions are independent:
+    - E[vₓ] = μₓ, E[vᵧ] = μᵧ, E[v_z] = μ_z
+    - Var[vₓ], Var[vᵧ], Var[v_z] computed independently
         
         PARAMETERS:
         - mu_x, mu_y, mu_z: mean velocities μx, μy, μz (physically: ux, uy, uz)
@@ -1074,8 +1097,8 @@ class QuantumDiscreteGaussian:
         discrete Maxwell-Boltzmann velocities and returns them in the standard
         D3Q27 lattice ordering used in your LBM code.
         
-        PROBABILITY COMPUTATION:
-        Uses independence: P(vₓ, vᵧ, vᵧ) = P(vₓ) × P(vᵧ) × P(vᵧ)
+    PROBABILITY COMPUTATION:
+    Uses independence: P(v_x, v_y, v_z) = P(v_x) × P(v_y) × P(v_z)
         
         ORDERING:
         Matches your LBM code's velocity sequence:
@@ -1222,18 +1245,18 @@ class QuantumDiscreteGaussian:
         - |10⟩ → 0
         - |11⟩ → unused
         
-        QUBIT MAPPING:
-        - Qubits 0-1: vₓ component
-        - Qubits 2-3: vᵧ component
-        - Qubits 4-5: vᵧ component
+    QUBIT MAPPING:
+    - Qubits 0-1: v_x component (x-direction)
+    - Qubits 2-3: v_y component (y-direction)
+    - Qubits 4-5: v_z component (z-direction)
         
         QISKIT BIT ORDER:
         Measurement string is reversed: bit 5 is leftmost, bit 0 is rightmost
         Example: '010001' means qubit[5]=0, qubit[4]=1, ..., qubit[0]=1
         
-        OUTPUT:
-        Dictionary mapping (vₓ, vᵧ, vᵧ) tuples to counts
-        Example: {(-1, 0, +1): 235, (0, 0, 0): 189, ...}
+    OUTPUT:
+    Dictionary mapping (v_x, v_y, v_z) tuples to counts
+    Example: {(-1, 0, +1): 235, (0, 0, 0): 189, ...}
         """
         velocity_counts = {}
         

@@ -35,7 +35,8 @@ def visualize_fields(Nx=10, Ny=6, Nz=4, slice_index=2, shots=3000, save_only=Fal
     print()
     
     # Initialize quantum sampler
-    qdg = QuantumDiscreteGaussian(grid_size=10, circuit_type='symmetric', 
+    # Initialize QuantumDiscreteGaussian with matching 1D grid_size for clarity
+    qdg = QuantumDiscreteGaussian(grid_size=Nx, circuit_type='symmetric', 
                                    grid_3d=(Nx, Ny, Nz))
     
     # Compute 3D input parameters
@@ -115,17 +116,23 @@ def visualize_fields(Nx=10, Ny=6, Nz=4, slice_index=2, shots=3000, save_only=Fal
     print("Generating plots...")
     fig, axes = plt.subplots(4, 2, figsize=(14, 16))
     
-    extent = [0, Ny-1, 0, Nx-1]
-    
+    # Use conventional image orientation: x -> columns, y -> rows
+    # mu_x_slice has shape (Nx, Ny). Matplotlib imshow expects (rows=y, cols=x),
+    # so transpose the slice arrays before plotting and set extent accordingly.
+    extent = [0, Nx - 1, 0, Ny - 1]
+
+    # Transpose slices so axis 0 -> y (rows) and axis 1 -> x (cols)
+    mu_x_plot = mu_x_slice.T
+
     # Row 1: uₓ (x-velocity)
-    im0 = axes[0, 0].imshow(mu_x_slice, aspect='auto', cmap='RdBu_r', 
+    im0 = axes[0, 0].imshow(mu_x_plot, aspect='auto', cmap='RdBu_r', 
                             origin='lower', extent=extent)
     axes[0, 0].set_title(f'Input: ux (Mean X-Velocity) [z={slice_index}]', fontweight='bold')
     axes[0, 0].set_xlabel('x')
     axes[0, 0].set_ylabel('y')
     plt.colorbar(im0, ax=axes[0, 0], label='ux')
     
-    im1 = axes[0, 1].imshow(qmean_x_slice, aspect='auto', cmap='RdBu_r', 
+    im1 = axes[0, 1].imshow(qmean_x_slice.T, aspect='auto', cmap='RdBu_r', 
                             origin='lower', extent=extent, vmin=im0.get_clim()[0], vmax=im0.get_clim()[1])
     axes[0, 1].set_title(f'Quantum: E[vx] from Samples [z={slice_index}]', fontweight='bold')
     axes[0, 1].set_xlabel('x')
@@ -133,14 +140,14 @@ def visualize_fields(Nx=10, Ny=6, Nz=4, slice_index=2, shots=3000, save_only=Fal
     plt.colorbar(im1, ax=axes[0, 1], label='E[vx]')
     
     # Row 2: uᵧ (y-velocity)
-    im2 = axes[1, 0].imshow(mu_y_slice, aspect='auto', cmap='RdBu_r', 
+    im2 = axes[1, 0].imshow(mu_y_slice.T, aspect='auto', cmap='RdBu_r', 
                             origin='lower', extent=extent)
     axes[1, 0].set_title(f'Input: uy (Mean Y-Velocity) [z={slice_index}]', fontweight='bold')
     axes[1, 0].set_xlabel('x')
     axes[1, 0].set_ylabel('y')
     plt.colorbar(im2, ax=axes[1, 0], label='uy')
     
-    im3 = axes[1, 1].imshow(qmean_y_slice, aspect='auto', cmap='RdBu_r', 
+    im3 = axes[1, 1].imshow(qmean_y_slice.T, aspect='auto', cmap='RdBu_r', 
                             origin='lower', extent=extent, vmin=im2.get_clim()[0], vmax=im2.get_clim()[1])
     axes[1, 1].set_title(f'Quantum: E[vy] from Samples [z={slice_index}]', fontweight='bold')
     axes[1, 1].set_xlabel('x')
@@ -148,14 +155,14 @@ def visualize_fields(Nx=10, Ny=6, Nz=4, slice_index=2, shots=3000, save_only=Fal
     plt.colorbar(im3, ax=axes[1, 1], label='E[vy]')
     
     # Row 3: uz (z-velocity)
-    im4 = axes[2, 0].imshow(mu_z_slice, aspect='auto', cmap='RdBu_r', 
+    im4 = axes[2, 0].imshow(mu_z_slice.T, aspect='auto', cmap='RdBu_r', 
                             origin='lower', extent=extent)
     axes[2, 0].set_title(f'Input: uz (Mean Z-Velocity) [z={slice_index}]', fontweight='bold')
     axes[2, 0].set_xlabel('x')
     axes[2, 0].set_ylabel('y')
     plt.colorbar(im4, ax=axes[2, 0], label='uz')
     
-    im5 = axes[2, 1].imshow(qmean_z_slice, aspect='auto', cmap='RdBu_r', 
+    im5 = axes[2, 1].imshow(qmean_z_slice.T, aspect='auto', cmap='RdBu_r', 
                             origin='lower', extent=extent, vmin=im4.get_clim()[0], vmax=im4.get_clim()[1])
     axes[2, 1].set_title(f'Quantum: E[vz] from Samples [z={slice_index}]', fontweight='bold')
     axes[2, 1].set_xlabel('x')
@@ -163,14 +170,14 @@ def visualize_fields(Nx=10, Ny=6, Nz=4, slice_index=2, shots=3000, save_only=Fal
     plt.colorbar(im5, ax=axes[2, 1], label='E[vz]')
     
     # Row 4: Temperature / Variance
-    im6 = axes[3, 0].imshow(T_slice, aspect='auto', cmap='hot', 
+    im6 = axes[3, 0].imshow(T_slice.T, aspect='auto', cmap='hot', 
                             origin='lower', extent=extent)
     axes[3, 0].set_title(f'Input: T (Temperature) [z={slice_index}]', fontweight='bold')
     axes[3, 0].set_xlabel('x')
     axes[3, 0].set_ylabel('y')
     plt.colorbar(im6, ax=axes[3, 0], label='T')
     
-    im7 = axes[3, 1].imshow(qvar_avg_slice, aspect='auto', cmap='hot', 
+    im7 = axes[3, 1].imshow(qvar_avg_slice.T, aspect='auto', cmap='hot', 
                             origin='lower', extent=extent, vmin=im6.get_clim()[0], vmax=im6.get_clim()[1])
     axes[3, 1].set_title(f'Quantum: Avg(Var[vx,vy,vz]) [z={slice_index}]', fontweight='bold')
     axes[3, 1].set_xlabel('x')
