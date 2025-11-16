@@ -1723,7 +1723,7 @@ def main():
     
     # Show example circuit for the first grid point
     print("EXAMPLE QUANTUM CIRCUIT:")
-    qdg.print_circuit_example(grid_point=0)
+    qdg.print_circuit_example(grid_point=1)
     print()
 
     # Quantum sampling sweep (serial per grid point)
