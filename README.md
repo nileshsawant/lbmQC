@@ -47,8 +47,8 @@ This implementation uses a novel **parametric quantum circuit** that directly en
 
 For 1D:
 - Compute p = μ² + T
-- Set θ = 2 * arccos(sqrt(p))
-- Set φ = 2 * arctan(μ / T) if T > 0
+- First qubit: θ₁ = 2 * arccos(sqrt(p))
+- Second qubit: θ₂ = 2 * arcsin(sqrt(0.5 * (1 + μ/p)))
 
 For 3D:
 - Apply the same formulas independently to each dimension (x, y, z)
@@ -319,8 +319,8 @@ Given motion (qubit_0 = 0), determine direction -1 vs +1:
 
 This conditional probability is implemented with a controlled-RY gate with angle:
 ```text
-θ₂ = 2 * arccos(sqrt(P(+1)/(P(-1) + P(+1))))
-    = 2 * arccos(sqrt(0.5 * (1 + μ/p)))
+θ₂ = 2 * arcsin(sqrt(P(+1)/(P(-1) + P(+1))))
+    = 2 * arcsin(sqrt(0.5 * (1 + μ/p)))
 ```
 
 The CNOT gate is controlled by the first qubit, so this rotation only applies when the particle is moving.
