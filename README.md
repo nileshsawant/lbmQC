@@ -135,7 +135,7 @@ Sample from a 1D discrete Gaussian distribution on a grid:
 
 ```bash
 # Run 1D quantum simulation with default parameters
-python quantum_discrete_gaussian.py
+python quantum_discrete_gaussian.py --shots 5000
 ```
 
 This generates a visualization showing mean/variance variations across the grid and probability distributions at each point.
@@ -340,17 +340,6 @@ P(vx, vy, vz) = P(vx) * P(vy) * P(vz)
 ```
 
 This allows us to use three separate 2-qubit circuits (6 qubits total), one for each dimension. Each dimension independently samples from its discrete Gaussian using the same gate rotation formulas with its respective mean and temperature.
-
-## Extensions and Future Work
-
-This implementation can be extended to:
-
-- **Real quantum hardware**: Currently uses Aer simulator, can be adapted for IBM Quantum or other platforms
-- **Higher-order moments**: Add circuits for sampling higher-order velocity moments
-- **Boundary conditions**: Implement quantum circuits for wall boundaries and inflow/outflow
-- **Collision operator**: Quantum implementation of BGK or MRT collision operators
-- **Multi-component flows**: Extend to multiple fluid species
-- **Adaptive grids**: Dynamic grid refinement based on local flow features
 
 ## Citation
 
