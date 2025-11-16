@@ -8,6 +8,7 @@ Variance: T(x) = T0 + 0.05 * sin(2π * x/10), where T0 = 1/3
 Outcomes: {-1, 0, 1}
 """
 
+import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 from qiskit import QuantumCircuit
@@ -1664,39 +1665,65 @@ class QuantumDiscreteGaussian:
         ax2.legend(loc='upper left', bbox_to_anchor=(1.02, 1), ncol=1)
         ax2.set_ylim(0, 1)
         
-        # Plot 3: Heatmap of quantum empirical probabilities
-        im = ax3.imshow(prob_matrix_quantum.T, aspect='auto', cmap='viridis', 
-                       origin='lower', vmin=0, vmax=1)
-        ax3.set_xlabel('Grid Point')
-        ax3.set_ylabel('Outcome')
-        ax3.set_title('Quantum Empirical Probability Heatmap')
-        ax3.set_yticks([0, 1, 2])
-        ax3.set_yticklabels(['-1', '0', '+1'])
-        plt.colorbar(im, ax=ax3, label='Probability')
+        # Plot 3: Mean and Variance Recovery from Quantum Moments
+        # Compute recovered moments from quantum samples
+        recovered_means = np.zeros(self.grid_size)
+        recovered_variances = np.zeros(self.grid_size)
         
-        # Plot 4: Error analysis across grid
-        errors = np.zeros(self.grid_size)
         for i in range(self.grid_size):
-            # Calculate total variation distance at each point
-            error = 0.5 * np.sum(np.abs(prob_matrix_theoretical[i, :] - prob_matrix_quantum[i, :]))
-            errors[i] = error
+            total_shots = sum(results[i].values())
+            if total_shots > 0:
+                # Compute mean: E[v] = sum(v * count) / total
+                mean_recovered = (results[i][-1] * (-1) + results[i][0] * 0 + results[i][1] * 1) / total_shots
+                
+                # Compute variance: Var[v] = E[v²] - E[v]²
+                mean_v2 = (results[i][-1] * 1 + results[i][0] * 0 + results[i][1] * 1) / total_shots
+                var_recovered = mean_v2 - mean_recovered**2
+                
+                recovered_means[i] = mean_recovered
+                recovered_variances[i] = var_recovered
+            else:
+                # If no measurements, use theoretical values
+                recovered_means[i] = means[i]
+                recovered_variances[i] = variances[i]
         
-        ax4.plot(x_points, errors, 'mo-', linewidth=2, markersize=8, 
-                label=f'TVD Error (Mean: {np.mean(errors):.4f})')
+        # Plot mean comparison
+        ax3.plot(x_points, means, 'b-o', linewidth=2.5, markersize=7, 
+                label='Input μ(x)', alpha=0.8)
+        ax3.plot(x_points, recovered_means, 'r--s', linewidth=2, markersize=6, 
+                markerfacecolor='white', label='Recovered E[v]', alpha=0.9)
+        ax3.set_xlabel('Grid Point')
+        ax3.set_ylabel('Mean Velocity')
+        ax3.set_title('Mean: Input vs Recovered from Quantum Moments', fontweight='bold')
+        ax3.grid(True, alpha=0.3)
+        ax3.legend(loc='best')
+        
+        # Add error statistics for mean
+        mean_error = np.mean(np.abs(means - recovered_means))
+        max_mean_error = np.max(np.abs(means - recovered_means))
+        ax3.text(0.02, 0.95, f'Mean Error: {mean_error:.5f}\nMax Error: {max_mean_error:.5f}', 
+                transform=ax3.transAxes, verticalalignment='top',
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="lightblue", alpha=0.7))
+        
+        # Plot 4: Variance comparison
+        ax4.plot(x_points, variances, 'b-o', linewidth=2.5, markersize=7, 
+                label='Input T(x)', alpha=0.8)
+        ax4.plot(x_points, recovered_variances, 'r--s', linewidth=2, markersize=6, 
+                markerfacecolor='white', label='Recovered Var[v]', alpha=0.9)
+        ax4.axhline(y=self.T0, color='gray', linestyle=':', alpha=0.7, 
+                   label=f'Base T₀={self.T0:.3f}')
         ax4.set_xlabel('Grid Point')
-        ax4.set_ylabel('Total Variation Distance')
-        ax4.set_title('Quantum vs Theoretical Error Across Grid')
+        ax4.set_ylabel('Variance / Temperature')
+        ax4.set_title('Variance: Input vs Recovered from Quantum Moments', fontweight='bold')
         ax4.grid(True, alpha=0.3)
-        ax4.legend()
+        ax4.legend(loc='best')
         
-        # Add overall statistics
-        mean_error = np.mean(errors)
-        max_error = np.max(errors)
-        ax4.axhline(y=mean_error, color='orange', linestyle='--', alpha=0.7, 
-                   label=f'Mean Error: {mean_error:.4f}')
-        ax4.text(0.02, 0.95, f'Max Error: {max_error:.4f}\nMean Error: {mean_error:.4f}', 
+        # Add error statistics for variance
+        var_error = np.mean(np.abs(variances - recovered_variances))
+        max_var_error = np.max(np.abs(variances - recovered_variances))
+        ax4.text(0.02, 0.95, f'Mean Error: {var_error:.5f}\nMax Error: {max_var_error:.5f}', 
                 transform=ax4.transAxes, verticalalignment='top',
-                bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgray", alpha=0.7))
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="lightcoral", alpha=0.7))
         
         plt.tight_layout()
         plt.savefig(filename, dpi=300, bbox_inches='tight')
@@ -1706,11 +1733,36 @@ class QuantumDiscreteGaussian:
 
 def main():
     """Main execution function"""
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(
+        description='Quantum Discrete Gaussian Distribution on 1D Grid',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    parser.add_argument(
+        '--shots',
+        type=int,
+        default=5000,
+        help='Number of quantum circuit shots per grid point'
+    )
+    parser.add_argument(
+        '--grid-size',
+        type=int,
+        default=10,
+        help='Number of grid points'
+    )
+    parser.add_argument(
+        '--output',
+        type=str,
+        default='results_quantum_sampling.png',
+        help='Output filename for visualization'
+    )
+    args = parser.parse_args()
+    
     print("Quantum Discrete Gaussian Distribution on 1D Grid")
     print("=" * 55)
     
     # Initialize quantum discrete Gaussian
-    qdg = QuantumDiscreteGaussian(grid_size=10)
+    qdg = QuantumDiscreteGaussian(grid_size=args.grid_size)
     
     # Display parameter setup
     means, variances = qdg.compute_parameters()
@@ -1719,6 +1771,7 @@ def main():
     print(f"Mean range: [{means.min():.4f}, {means.max():.4f}]")
     print(f"Variance range: [{variances.min():.4f}, {variances.max():.4f}]")
     print(f"Outcomes: {qdg.outcomes}")
+    print(f"Shots per point: {args.shots}")
     print()
     
     # Show example circuit for the first grid point
@@ -1728,14 +1781,13 @@ def main():
 
     # Quantum sampling sweep (serial per grid point)
     results = qdg.quantum_parallel_grid_sampling(
-        shots_per_point=4000,
+        shots_per_point=args.shots,
         means=means,
         variances=variances,
     )
-    output_file = 'results_quantum_sampling.png'
-    qdg.plot_results(results, means, variances, filename=output_file)
+    qdg.plot_results(results, means, variances, filename=args.output)
     
-    print(f"Analysis complete! Check '{output_file}' for visualizations.")
+    print(f"Analysis complete! Check '{args.output}' for visualizations.")
 
 if __name__ == "__main__":
     main()

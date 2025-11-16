@@ -226,8 +226,10 @@ The program generates:
 2. **Visualization**: Four-panel plot showing:
    - Mean parameter variation across the grid
    - Variance parameter variation across the grid
-   - 2D heatmap of empirical probability distributions
-   - Theoretical vs quantum empirical comparison at each grid point
+   - Theoretical vs quantum probabilities comparison
+   - Mean and variance recovery from quantum moments
+
+![1D Quantum Sampling Results](results_quantum_sampling.png)
 
 ### 3D Mode
 
@@ -244,6 +246,8 @@ The visualization generates:
    - Row 2: Input μy vs Quantum E[vy]
    - Row 3: Input μz vs Quantum E[vz]
    - Row 4: Input T vs Quantum average variance
+
+![3D Field Comparison](field_comparison_10x6x4_z1.png)
 
 ### Accuracy
 
