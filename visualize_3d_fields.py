@@ -2,8 +2,8 @@
 Quick 2D Field Visualization for 3D Quantum LBM
 
 This script generates side-by-side comparisons of:
-- Input fields: μₓ, μᵧ, μᵧ, T (theoretical parameters)
-- Output fields: E[vₓ], E[vᵧ], E[vᵧ], Var (from quantum sampling)
+- Input fields: mu_x, mu_y, mu_z, T (theoretical parameters)
+- Output fields: E[vx], E[vy], E[vz], Var (from quantum sampling)
 
 Shows 2D slices through the 3D grid to visualize spatial variations.
 """
@@ -43,12 +43,12 @@ def visualize_fields(Nx=10, Ny=6, Nz=4, slice_index=2, shots=3000, save_only=Fal
     means_x, means_y, means_z, temperatures = qdg.compute_parameters_3d()
     
     print(f"\nInput field ranges:")
-    print(f"  μₓ: [{means_x.min():.4f}, {means_x.max():.4f}]")
-    print(f"  μᵧ: [{means_y.min():.4f}, {means_y.max():.4f}]")
-    print(f"  μᵧ: [{means_z.min():.4f}, {means_z.max():.4f}]")
+    print(f"  mu_x: [{means_x.min():.4f}, {means_x.max():.4f}]")
+    print(f"  mu_y: [{means_y.min():.4f}, {means_y.max():.4f}]")
+    print(f"  mu_z: [{means_z.min():.4f}, {means_z.max():.4f}]")
     print(f"  T:  [{temperatures.min():.4f}, {temperatures.max():.4f}]")
     print()
-    print("Note: μᵧ varies primarily with z-coordinate")
+    print("Note: mu_z varies primarily with z-coordinate")
     print("      A 2D slice at constant z shows secondary x-variation")
     print()
     
@@ -117,64 +117,64 @@ def visualize_fields(Nx=10, Ny=6, Nz=4, slice_index=2, shots=3000, save_only=Fal
     
     extent = [0, Ny-1, 0, Nx-1]
     
-    # Row 1: μₓ (x-velocity)
+    # Row 1: uₓ (x-velocity)
     im0 = axes[0, 0].imshow(mu_x_slice, aspect='auto', cmap='RdBu_r', 
                             origin='lower', extent=extent)
-    axes[0, 0].set_title(f'Input: μₓ (Mean X-Velocity) [z={slice_index}]', fontweight='bold')
-    axes[0, 0].set_xlabel('y')
-    axes[0, 0].set_ylabel('x')
-    plt.colorbar(im0, ax=axes[0, 0], label='μₓ')
+    axes[0, 0].set_title(f'Input: ux (Mean X-Velocity) [z={slice_index}]', fontweight='bold')
+    axes[0, 0].set_xlabel('x')
+    axes[0, 0].set_ylabel('y')
+    plt.colorbar(im0, ax=axes[0, 0], label='ux')
     
     im1 = axes[0, 1].imshow(qmean_x_slice, aspect='auto', cmap='RdBu_r', 
                             origin='lower', extent=extent, vmin=im0.get_clim()[0], vmax=im0.get_clim()[1])
-    axes[0, 1].set_title(f'Quantum: E[vₓ] from Samples [z={slice_index}]', fontweight='bold')
-    axes[0, 1].set_xlabel('y')
-    axes[0, 1].set_ylabel('x')
-    plt.colorbar(im1, ax=axes[0, 1], label='E[vₓ]')
+    axes[0, 1].set_title(f'Quantum: E[vx] from Samples [z={slice_index}]', fontweight='bold')
+    axes[0, 1].set_xlabel('x')
+    axes[0, 1].set_ylabel('y')
+    plt.colorbar(im1, ax=axes[0, 1], label='E[vx]')
     
-    # Row 2: μᵧ (y-velocity)
+    # Row 2: uᵧ (y-velocity)
     im2 = axes[1, 0].imshow(mu_y_slice, aspect='auto', cmap='RdBu_r', 
                             origin='lower', extent=extent)
-    axes[1, 0].set_title(f'Input: μᵧ (Mean Y-Velocity) [z={slice_index}]', fontweight='bold')
-    axes[1, 0].set_xlabel('y')
-    axes[1, 0].set_ylabel('x')
-    plt.colorbar(im2, ax=axes[1, 0], label='μᵧ')
+    axes[1, 0].set_title(f'Input: uy (Mean Y-Velocity) [z={slice_index}]', fontweight='bold')
+    axes[1, 0].set_xlabel('x')
+    axes[1, 0].set_ylabel('y')
+    plt.colorbar(im2, ax=axes[1, 0], label='uy')
     
     im3 = axes[1, 1].imshow(qmean_y_slice, aspect='auto', cmap='RdBu_r', 
                             origin='lower', extent=extent, vmin=im2.get_clim()[0], vmax=im2.get_clim()[1])
-    axes[1, 1].set_title(f'Quantum: E[vᵧ] from Samples [z={slice_index}]', fontweight='bold')
-    axes[1, 1].set_xlabel('y')
-    axes[1, 1].set_ylabel('x')
-    plt.colorbar(im3, ax=axes[1, 1], label='E[vᵧ]')
+    axes[1, 1].set_title(f'Quantum: E[vy] from Samples [z={slice_index}]', fontweight='bold')
+    axes[1, 1].set_xlabel('x')
+    axes[1, 1].set_ylabel('y')
+    plt.colorbar(im3, ax=axes[1, 1], label='E[vy]')
     
-    # Row 3: μz (z-velocity)
+    # Row 3: uz (z-velocity)
     im4 = axes[2, 0].imshow(mu_z_slice, aspect='auto', cmap='RdBu_r', 
                             origin='lower', extent=extent)
-    axes[2, 0].set_title(f'Input: μz (Mean Z-Velocity) [z={slice_index}]', fontweight='bold')
-    axes[2, 0].set_xlabel('y')
-    axes[2, 0].set_ylabel('x')
-    plt.colorbar(im4, ax=axes[2, 0], label='μz')
+    axes[2, 0].set_title(f'Input: uz (Mean Z-Velocity) [z={slice_index}]', fontweight='bold')
+    axes[2, 0].set_xlabel('x')
+    axes[2, 0].set_ylabel('y')
+    plt.colorbar(im4, ax=axes[2, 0], label='uz')
     
     im5 = axes[2, 1].imshow(qmean_z_slice, aspect='auto', cmap='RdBu_r', 
                             origin='lower', extent=extent, vmin=im4.get_clim()[0], vmax=im4.get_clim()[1])
     axes[2, 1].set_title(f'Quantum: E[vz] from Samples [z={slice_index}]', fontweight='bold')
-    axes[2, 1].set_xlabel('y')
-    axes[2, 1].set_ylabel('x')
+    axes[2, 1].set_xlabel('x')
+    axes[2, 1].set_ylabel('y')
     plt.colorbar(im5, ax=axes[2, 1], label='E[vz]')
     
     # Row 4: Temperature / Variance
     im6 = axes[3, 0].imshow(T_slice, aspect='auto', cmap='hot', 
                             origin='lower', extent=extent)
     axes[3, 0].set_title(f'Input: T (Temperature) [z={slice_index}]', fontweight='bold')
-    axes[3, 0].set_xlabel('y')
-    axes[3, 0].set_ylabel('x')
+    axes[3, 0].set_xlabel('x')
+    axes[3, 0].set_ylabel('y')
     plt.colorbar(im6, ax=axes[3, 0], label='T')
     
     im7 = axes[3, 1].imshow(qvar_avg_slice, aspect='auto', cmap='hot', 
                             origin='lower', extent=extent, vmin=im6.get_clim()[0], vmax=im6.get_clim()[1])
     axes[3, 1].set_title(f'Quantum: Avg(Var[vx,vy,vz]) [z={slice_index}]', fontweight='bold')
-    axes[3, 1].set_xlabel('y')
-    axes[3, 1].set_ylabel('x')
+    axes[3, 1].set_xlabel('x')
+    axes[3, 1].set_ylabel('y')
     plt.colorbar(im7, ax=axes[3, 1], label='Variance')
     
     plt.tight_layout()
@@ -207,11 +207,11 @@ def visualize_fields(Nx=10, Ny=6, Nz=4, slice_index=2, shots=3000, save_only=Fal
     print(f"  Var: mean={np.mean(error_var):.6f}, max={np.max(error_var):.6f}, std={np.std(error_var):.6f}")
     
     print(f"\nField Ranges (z-slice {slice_index}):")
-    print(f"  Input μx: [{mu_x_slice.min():.4f}, {mu_x_slice.max():.4f}]")
+    print(f"  Input mu_x: [{mu_x_slice.min():.4f}, {mu_x_slice.max():.4f}]")
     print(f"  Output E[vx]: [{qmean_x_slice.min():.4f}, {qmean_x_slice.max():.4f}]")
-    print(f"  Input μy: [{mu_y_slice.min():.4f}, {mu_y_slice.max():.4f}]")
+    print(f"  Input mu_y: [{mu_y_slice.min():.4f}, {mu_y_slice.max():.4f}]")
     print(f"  Output E[vy]: [{qmean_y_slice.min():.4f}, {qmean_y_slice.max():.4f}]")
-    print(f"  Input μz: [{mu_z_slice.min():.4f}, {mu_z_slice.max():.4f}]")
+    print(f"  Input mu_z: [{mu_z_slice.min():.4f}, {mu_z_slice.max():.4f}]")
     print(f"  Output E[vz]: [{qmean_z_slice.min():.4f}, {qmean_z_slice.max():.4f}]")
     print(f"  Input T: [{T_slice.min():.4f}, {T_slice.max():.4f}]")
     print(f"  Output Var: [{qvar_avg_slice.min():.4f}, {qvar_avg_slice.max():.4f}]")

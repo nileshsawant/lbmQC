@@ -30,9 +30,9 @@ This module implements quantum computing algorithms for generating discrete Gaus
 
 - **Grid**: Nx x Ny x Nz points (default: 10 x 6 x 4 = 240 points)
 - **Mean velocities**: 
-  - μx(x) = 0.1 * sin(2π * x/Nx)
-  - μy(y) = 0.1 * sin(2π * y/Ny)
-  - μz(z,x) = 0.1 * sin(2π * z/Nz) + 0.02 * sin(2π * x/Nx)
+  - ux(x) = 0.1 * sin(2π * x/Nx)
+  - uy(y) = 0.1 * sin(2π * y/Ny)
+  - uz(z,x) = 0.1 * sin(2π * z/Nz) + 0.02 * sin(2π * x/Nx)
 - **Temperature**: T(x) = T0 + 0.05 * sin(2π * x/Nx), where T0 = 1/3
 - **Velocity outcomes per dimension**: {-1, 0, 1}
 - **Total 3D velocity states**: 27 (D3Q27 lattice)
@@ -43,12 +43,12 @@ This module implements quantum computing algorithms for generating discrete Gaus
 
 This implementation uses a novel **parametric quantum circuit** that directly encodes mean velocity and temperature into gate angles, eliminating the need for classical probability computation.
 
-**Key Innovation**: Instead of computing P(-1), P(0), P(+1) classically and then encoding them, we directly compute gate angles from (μ, T):
+**Key Innovation**: Instead of computing P(-1), P(0), P(+1) classically and then encoding them, we directly compute gate angles from (mu, sigma_sq):
 
 For 1D:
-- Compute p = μ² + T
-- First qubit: θ₁ = 2 * arccos(sqrt(p))
-- Second qubit: θ₂ = 2 * arcsin(sqrt(0.5 * (1 + μ/p)))
+   Compute p = mu**2 + sigma_sq
+   First qubit: theta1 = 2 * np.arccos(np.sqrt(p))
+   Second qubit: theta2 = 2 * np.arcsin(np.sqrt(0.5 * (1 + mu / p)))
 
 For 3D:
 - Apply the same formulas independently to each dimension (x, y, z)
@@ -79,23 +79,23 @@ Uses 2-qubit circuits per dimension to encode discrete Gaussian:
 **1D Sampling**:
 
 - `compute_parameters()`: Returns arrays of means and variances for each grid point
-- `discrete_gaussian_probs(mu, T)`: Normalized probabilities for {-1, 0, 1}
-- `create_quantum_circuit_parametric(mu, T)`: Direct parametric circuit from (μ, T)
-- `quantum_sample_grid_point(mu, T, shots)`: Samples one grid point
+- `discrete_gaussian_probs(mu, sigma_sq)`: Normalized probabilities for {-1, 0, 1}
+-- `create_quantum_circuit_parametric(mu, sigma_sq)`: Direct parametric circuit from (mu, sigma_sq)
+- `quantum_sample_grid_point(mu, sigma_sq, shots)`: Samples one grid point
 
 **3D Sampling**:
 
-- `compute_parameters_3d()`: Returns 3D arrays of (μx, μy, μz, T) for each grid point
-- `create_quantum_circuit_3d_parametric(μx, μy, μz, T)`: 6-qubit circuit for 3D velocity
-- `quantum_sample_grid_point_3d_parametric(μx, μy, μz, T, shots)`: Samples 3D velocity distribution
+- `compute_parameters_3d()`: Returns 3D arrays of (ux, uy, uz, T) for each grid point
+- `create_quantum_circuit_3d_parametric(mu_x, mu_y, mu_z, sigma_sq)`: 6-qubit circuit for 3D velocity
+- `quantum_sample_grid_point_3d_parametric(mu_x, mu_y, mu_z, sigma_sq, shots)`: Samples 3D velocity distribution
 - `compute_moments_from_samples_3d(velocity_counts)`: Direct moment calculation from samples
-- `compute_theoretical_moments_3d(μx, μy, μz, T)`: Theoretical moments for validation
+- `compute_theoretical_moments_3d(mu_x, mu_y, mu_z, sigma_sq)`: Theoretical moments for validation
 - `compute_moments_lbm_style(probs_27)`: LBM-style moment computation using standard formulas
 
 **LBM Integration**:
 
 - `get_d3q27_velocity_ordering()`: Returns D3Q27 lattice velocity vectors
-- `compute_3d_probability_distribution_lbm_order(μx, μy, μz, T)`: 27-point distribution in LBM order
+- `compute_3d_probability_distribution_lbm_order(mu_x, mu_y, mu_z, sigma_sq)`: 27-point distribution in LBM order
 - `convert_quantum_samples_to_lbm_order(velocity_counts)`: Converts quantum samples to LBM format
 
 ### Moment Calculation Methods
@@ -150,12 +150,12 @@ from quantum_discrete_gaussian import QuantumDiscreteGaussian
 # Initialize
 qdg = QuantumDiscreteGaussian(circuit_type='symmetric')
 
-# Sample at single point with parameters (μx, μy, μz, T)
+# Sample at single point with parameters (ux, uy, uz, T)
 velocity_counts = qdg.quantum_sample_grid_point_3d_parametric(
-    mu_x=0.1,      # Mean x-velocity
-    mu_y=-0.05,    # Mean y-velocity  
-    mu_z=0.15,     # Mean z-velocity
-    T=0.2,         # Temperature
+    mu_x=0.1,      # Mean x-velocity (ux)
+    mu_y=-0.05,    # Mean y-velocity (uy)
+    mu_z=0.15,     # Mean z-velocity (uz)
+    sigma_sq=0.2,  # Temperature/variance (T)
     shots=10000    # Number of quantum samples
 )
 
@@ -183,7 +183,7 @@ python visualize_3d_fields.py --Nx 10 --Ny 6 --Nz 4 --slice 1 --shots 20000
 python visualize_3d_fields.py --Nx 10 --Ny 6 --Nz 4 --slice 1 --shots 10000 --save-only
 ```
 
-The visualization generates a 4x2 panel plot comparing input parameters (μx, μy, μz, T) with quantum-sampled outputs (E[vx], E[vy], E[vz], average variance).
+The visualization generates a 4x2 panel plot comparing input parameters (ux, uy, uz, T) with quantum-sampled outputs (E[vx], E[vy], E[vz], average variance).
 
 ### LBM Integration
 
@@ -196,7 +196,7 @@ qdg = QuantumDiscreteGaussian(circuit_type='symmetric')
 
 # Get theoretical 27-point probability distribution in LBM order
 probs_27 = qdg.compute_3d_probability_distribution_lbm_order(
-    mu_x=0.1, mu_y=-0.05, mu_z=0.15, T=0.2
+    mu_x=0.1, mu_y=-0.05, mu_z=0.15, sigma_sq=0.2
 )
 
 # Compute moments using LBM formulas: ux = sum(f_i * c_ix)
@@ -242,9 +242,9 @@ The visualization generates:
    - Validation results
 
 2. **4x2 Panel Visualization** showing z-slices:
-   - Row 1: Input μx vs Quantum E[vx]
-   - Row 2: Input μy vs Quantum E[vy]
-   - Row 3: Input μz vs Quantum E[vz]
+   - Row 1: Input ux vs Quantum E[vx]
+   - Row 2: Input uy vs Quantum E[vy]
+   - Row 3: Input uz vs Quantum E[vz]
    - Row 4: Input T vs Quantum average variance
 
 ![3D Field Comparison](field_comparison_10x6x4_z1.png)
@@ -285,16 +285,16 @@ For production use, 15000-20000 shots per point provides excellent accuracy (err
 For discrete Gaussian distribution over {-1, 0, 1}, we use the Maxwell-Boltzmann form from Section 2.2.4 of [Sawant (2024)](https://doi.org/10.3929/ethz-b-000607045):
 
 ```text
-p = μ² + T
-P(-1) = -0.5 * μ + 0.5 * p
+p = mu**2 + sigma_sq
+P(-1) = -0.5 * mu + 0.5 * p
 P(0) = -p + 1.0
-P(+1) = 0.5 * μ + 0.5 * p
+P(+1) = 0.5 * mu + 0.5 * p
 ```
 
-where μ is the mean velocity and T is the temperature. This formulation ensures:
+where mu is the mean (mathematically) and sigma_sq is the variance. Physically, these correspond to velocity u and temperature T. This formulation ensures:
 - Probabilities sum to 1
-- Mean of distribution equals μ
-- Variance of distribution equals T (temperature)
+- Mean of distribution equals mu (velocity u)
+- Variance of distribution equals sigma_sq (temperature T)
 
 ### Quantum Circuit Implementation
 
@@ -308,7 +308,7 @@ Split the probability space into "moving" vs "stationary" particles:
 
 This is implemented with a single RY gate with angle:
 ```text
-θ₁ = 2 * arccos(sqrt(p))
+theta1 = 2 * arccos(sqrt(p))
 ```
 
 **Step 2: Second Qubit (Fine Splitting)**
@@ -319,17 +319,18 @@ Given motion (qubit_0 = 0), determine direction -1 vs +1:
 
 This conditional probability is implemented with a controlled-RY gate with angle:
 ```text
-θ₂ = 2 * arcsin(sqrt(P(+1)/(P(-1) + P(+1))))
-    = 2 * arcsin(sqrt(0.5 * (1 + μ/p)))
+theta2 = 2 * arcsin(sqrt(P(+1)/(P(-1) + P(+1))))
+   = 2 * arcsin(sqrt(0.5 * (1 + mu/p)))
+where p = mu**2 + sigma_sq
 ```
 
 The CNOT gate is controlled by the first qubit, so this rotation only applies when the particle is moving.
 
 **Final Encoding**:
-- |00⟩ -> velocity -1 (moving backward)
-- |01⟩ -> velocity +1 (moving forward)
-- |10⟩ -> velocity 0 (at rest)
-- |11⟩ -> unused (zero amplitude)
+- |00> -> velocity -1 (moving backward)
+- |01> -> velocity +1 (moving forward)
+- |10> -> velocity 0 (at rest)
+- |11> -> unused (zero amplitude)
 
 ### Extension to 3D
 
@@ -339,7 +340,7 @@ For 3D, the three dimensions are independent:
 P(vx, vy, vz) = P(vx) * P(vy) * P(vz)
 ```
 
-This allows us to use three separate 2-qubit circuits (6 qubits total), one for each dimension. Each dimension independently samples from its discrete Gaussian using the same gate rotation formulas with its respective mean and temperature.
+This allows us to use three separate 2-qubit circuits (6 qubits total), one for each dimension. Each dimension independently samples from its discrete Gaussian using the same gate rotation formulas with its respective mean velocity (ux, uy, uz) and temperature T (where sigma_sq = T).
 
 ## Citation
 

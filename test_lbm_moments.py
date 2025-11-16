@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test LBM-style moment computation: uₓ = Σᵢ fᵢ cᵢₓ
+Test LBM-style moment computation: u_x = Sum_i f_i c_ix
 
 This script demonstrates three ways to compute moments:
 1. Direct from quantum samples (existing method)
@@ -26,7 +26,7 @@ def test_lbm_moment_calculation():
     print("=" * 80)
     print("LBM-STYLE MOMENT CALCULATION TEST")
     print("=" * 80)
-    print(f"Parameters: μₓ={mu_x}, μᵧ={mu_y}, μᵧ={mu_z}, T={T}")
+    print(f"Parameters: mu_x={mu_x}, mu_y={mu_y}, mu_z={mu_z}, T={T}")
     print(f"Quantum shots: {shots}")
     print()
     
@@ -54,12 +54,12 @@ def test_lbm_moment_calculation():
     print()
     
     print("Moments (direct from samples):")
-    print(f"  E[vₓ] = {moments_direct['mean_x']:.6f}")
-    print(f"  E[vᵧ] = {moments_direct['mean_y']:.6f}")
-    print(f"  E[vᵧ] = {moments_direct['mean_z']:.6f}")
-    print(f"  Var[vₓ] = {moments_direct['var_x']:.6f}")
-    print(f"  Var[vᵧ] = {moments_direct['var_y']:.6f}")
-    print(f"  Var[vᵧ] = {moments_direct['var_z']:.6f}")
+    print(f"  E[vx] = {moments_direct['mean_x']:.6f}")
+    print(f"  E[vy] = {moments_direct['mean_y']:.6f}")
+    print(f"  E[vz] = {moments_direct['mean_z']:.6f}")
+    print(f"  Var[vx] = {moments_direct['var_x']:.6f}")
+    print(f"  Var[vy] = {moments_direct['var_y']:.6f}")
+    print(f"  Var[vz] = {moments_direct['var_z']:.6f}")
     print()
     
     # ========================================================================
@@ -84,12 +84,12 @@ def test_lbm_moment_calculation():
     print()
     
     print("Moments (theoretical from 1D):")
-    print(f"  E[vₓ] = {moments_theoretical['mean_x']:.6f}")
-    print(f"  E[vᵧ] = {moments_theoretical['mean_y']:.6f}")
-    print(f"  E[vᵧ] = {moments_theoretical['mean_z']:.6f}")
-    print(f"  Var[vₓ] = {moments_theoretical['var_x']:.6f}")
-    print(f"  Var[vᵧ] = {moments_theoretical['var_y']:.6f}")
-    print(f"  Var[vᵧ] = {moments_theoretical['var_z']:.6f}")
+    print(f"  E[vx] = {moments_theoretical['mean_x']:.6f}")
+    print(f"  E[vy] = {moments_theoretical['mean_y']:.6f}")
+    print(f"  E[vz] = {moments_theoretical['mean_z']:.6f}")
+    print(f"  Var[vx] = {moments_theoretical['var_x']:.6f}")
+    print(f"  Var[vy] = {moments_theoretical['var_y']:.6f}")
+    print(f"  Var[vz] = {moments_theoretical['var_z']:.6f}")
     print()
     
     # ========================================================================
@@ -97,7 +97,7 @@ def test_lbm_moment_calculation():
     # ========================================================================
     print("-" * 80)
     print("METHOD 3: LBM-style moment calculation from 27 probabilities")
-    print("         uₓ = Σᵢ₌₀²⁶ fᵢ cᵢₓ  (NEW compute_moments_lbm_style)")
+    print("         u_x = Sum_{i=0..26} f_i c_ix  (NEW compute_moments_lbm_style)")
     print("-" * 80)
     
     # Theoretical: Compute 27 probabilities in LBM order
@@ -111,33 +111,33 @@ def test_lbm_moment_calculation():
     for i in range(min(5, 27)):
         print(f"  [{i:2d}] c=({vX[i]:+2d},{vY[i]:+2d},{vZ[i]:+2d}): f={probs_27_theoretical[i]:.6f}")
     print(f"  ... (27 total directions)")
-    print(f"  Σ fᵢ = {np.sum(probs_27_theoretical):.8f} (should be 1.0)")
+    print(f"  Sum f_i = {np.sum(probs_27_theoretical):.8f} (should be 1.0)")
     print()
     
     moments_lbm_theoretical = qdg.compute_moments_lbm_style(probs_27_theoretical)
     
     print("Moments (LBM-style from theoretical 27 probabilities):")
-    print(f"  uₓ = Σ fᵢ cᵢₓ = {moments_lbm_theoretical['mean_x']:.6f}")
-    print(f"  uᵧ = Σ fᵢ cᵢᵧ = {moments_lbm_theoretical['mean_y']:.6f}")
-    print(f"  uᵧ = Σ fᵢ cᵢᵧ = {moments_lbm_theoretical['mean_z']:.6f}")
-    print(f"  Var[uₓ] = Σ fᵢ cᵢₓ² - uₓ² = {moments_lbm_theoretical['var_x']:.6f}")
-    print(f"  Var[uᵧ] = Σ fᵢ cᵢᵧ² - uᵧ² = {moments_lbm_theoretical['var_y']:.6f}")
-    print(f"  Var[uᵧ] = Σ fᵢ cᵢᵧ² - uᵧ² = {moments_lbm_theoretical['var_z']:.6f}")
-    print(f"  ρ = {moments_lbm_theoretical['rho']:.8f}")
+    print(f"  u_x = Sum f_i c_ix = {moments_lbm_theoretical['mean_x']:.6f}")
+    print(f"  u_y = Sum f_i c_iy = {moments_lbm_theoretical['mean_y']:.6f}")
+    print(f"  u_z = Sum f_i c_iz = {moments_lbm_theoretical['mean_z']:.6f}")
+    print(f"  Var[u_x] = Sum f_i c_ix^2 - u_x^2 = {moments_lbm_theoretical['var_x']:.6f}")
+    print(f"  Var[u_y] = Sum f_i c_iy^2 - u_y^2 = {moments_lbm_theoretical['var_y']:.6f}")
+    print(f"  Var[u_z] = Sum f_i c_iz^2 - u_z^2 = {moments_lbm_theoretical['var_z']:.6f}")
+    print(f"  rho = {moments_lbm_theoretical['rho']:.8f}")
     print()
     
     # Also compute from quantum samples converted to LBM order
     probs_27_quantum = qdg.convert_quantum_samples_to_lbm_order(velocity_counts)
     moments_lbm_quantum = qdg.compute_moments_lbm_style(probs_27_quantum)
     
-    print("Moments (LBM-style from quantum samples → 27 probabilities):")
-    print(f"  uₓ = Σ fᵢ cᵢₓ = {moments_lbm_quantum['mean_x']:.6f}")
-    print(f"  uᵧ = Σ fᵢ cᵢᵧ = {moments_lbm_quantum['mean_y']:.6f}")
-    print(f"  uᵧ = Σ fᵢ cᵢᵧ = {moments_lbm_quantum['mean_z']:.6f}")
-    print(f"  Var[uₓ] = {moments_lbm_quantum['var_x']:.6f}")
-    print(f"  Var[uᵧ] = {moments_lbm_quantum['var_y']:.6f}")
-    print(f"  Var[uᵧ] = {moments_lbm_quantum['var_z']:.6f}")
-    print(f"  ρ = {moments_lbm_quantum['rho']:.8f}")
+    print("Moments (LBM-style from quantum samples -> 27 probabilities):")
+    print(f"  u_x = Sum f_i c_ix = {moments_lbm_quantum['mean_x']:.6f}")
+    print(f"  u_y = Sum f_i c_iy = {moments_lbm_quantum['mean_y']:.6f}")
+    print(f"  u_z = Sum f_i c_iz = {moments_lbm_quantum['mean_z']:.6f}")
+    print(f"  Var[u_x] = {moments_lbm_quantum['var_x']:.6f}")
+    print(f"  Var[u_y] = {moments_lbm_quantum['var_y']:.6f}")
+    print(f"  Var[u_z] = {moments_lbm_quantum['var_z']:.6f}")
+    print(f"  rho = {moments_lbm_quantum['rho']:.8f}")
     print()
     
     # ========================================================================
@@ -196,10 +196,10 @@ def test_lbm_moment_calculation():
     print("CONCLUSION: All three methods produce consistent results!")
     print("=" * 80)
     print("\nLBM formulas work correctly:")
-    print("  uₓ = Σᵢ₌₀²⁶ fᵢ cᵢₓ  ✓")
-    print("  uᵧ = Σᵢ₌₀²⁶ fᵢ cᵢᵧ  ✓")
-    print("  uᵧ = Σᵢ₌₀²⁶ fᵢ cᵢᵧ  ✓")
-    print("  Var = Σ fᵢ cᵢ² - (Σ fᵢ cᵢ)²  ✓")
+    print("  u_x = Sum_{i=0..26} f_i c_ix  ✓")
+    print("  u_y = Sum_{i=0..26} f_i c_iy  ✓")
+    print("  u_z = Sum_{i=0..26} f_i c_iz  ✓")
+    print("  Var = Sum f_i c_i^2 - (Sum f_i c_i)^2  ✓")
     print()
 
 if __name__ == "__main__":

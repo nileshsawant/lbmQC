@@ -30,13 +30,23 @@ class QuantumDiscreteGaussian:
             raise ValueError(f"circuit_type must be 'symmetric' or 'original', got '{circuit_type}'")
         
     def compute_parameters(self) -> Tuple[np.ndarray, np.ndarray]:
-        """Compute mean and variance for each grid point"""
+        """
+        Compute mean and variance for each grid point.
+        
+    SPATIAL VARIATIONS:
+    - Mean velocity: u(x) = 0.1 * sin(2π * x/10)
+    - Temperature: T(x) = T0 + 0.05 * sin(2π * x/10)
+        
+    RETURNS:
+    - means: array of mean velocities (physically: u)
+    - variances: array of temperatures/variances (physically: T, mathematically: sigma_sq)
+        """
         x_points = np.arange(self.grid_size)
         
-        # Mean: u(x) = 0.1 * sin(2π * x/10)
+        # Mean velocity: u(x) = 0.1 * sin(2π * x/10)
         means = 0.1 * np.sin(2 * np.pi * x_points / self.grid_size)
         
-        # Variance: T(x) = T0 + 0.05 * sin(2π * x/10)
+        # Temperature: T(x) = T0 + 0.05 * sin(2π * x/10)
         variances = self.T0 + 0.05 * np.sin(2 * np.pi * x_points / self.grid_size)
         
         return means, variances
@@ -49,23 +59,23 @@ class QuantumDiscreteGaussian:
         3D grid with dimensions (Nx, Ny, Nz) specified in self.grid_3d
         Default: (10, 6, 4) for 240 total grid points
         
-        PARAMETER VARIATIONS:
-        - μₓ(x): 0.1 * sin(2π * x/Nx) - varies with x-position only
-        - μᵧ(y): 0.1 * sin(2π * y/Ny) - varies with y-position only
-        - μᵧ(z,x): 0.1 * sin(2π * z/Nz) + 0.02 * sin(2π * x/Nx) - varies with z (primary) and x (secondary)
-        - T(x): T₀ + 0.05 * sin(2π * x/Nx) - temperature varies with x-position
+        PARAMETER VARIATIONS (physical notation):
+        - ux(x): 0.1 * sin(2π * x/Nx) - varies with x-position only
+        - uy(y): 0.1 * sin(2π * y/Ny) - varies with y-position only
+        - uz(z,x): 0.1 * sin(2π * z/Nz) + 0.02 * sin(2π * x/Nx) - varies with z (primary) and x (secondary)
+    - T(x): T0 + 0.05 * sin(2π * x/Nx) - temperature varies with x-position
         
-        PHYSICAL INTERPRETATION:
-        - Mean velocities show spatial variation (flow patterns)
-        - Temperature varies with x (energy gradient)
-        - Each dimension has independent sinusoidal variation
+    PHYSICAL INTERPRETATION:
+    - Mean velocities show spatial variation (flow patterns)
+    - Temperature varies with x (energy gradient)
+    - Each dimension has independent sinusoidal variation
         
         RETURNS:
-        Tuple of 4 arrays, each with shape (Nx, Ny, Nz):
-        - means_x: x-component mean velocities
-        - means_y: y-component mean velocities
-        - means_z: z-component mean velocities
-        - temperatures: temperature field (isotropic at each point)
+    Tuple of 4 arrays, each with shape (Nx, Ny, Nz):
+    - means_x: x-component mean velocities (physically: ux)
+    - means_y: y-component mean velocities (physically: uy)
+    - means_z: z-component mean velocities (physically: uz)
+    - temperatures: temperature field T (mathematically: sigma_sq, isotropic at each point)
         """
         if self.grid_3d is None:
             raise ValueError("3D grid dimensions not specified. Set grid_3d=(Nx, Ny, Nz) in __init__")
@@ -81,13 +91,13 @@ class QuantumDiscreteGaussian:
         X, Y, Z = np.meshgrid(x_coords, y_coords, z_coords, indexing='ij')
         
         # Mean velocity variations (each depends on one coordinate only)
-        # μₓ varies with x: flow in x-direction depends on x-position
+        # ux varies with x: flow in x-direction depends on x-position
         means_x = 0.1 * np.sin(2 * np.pi * X / Nx)
         
-        # μᵧ varies with y: flow in y-direction depends on y-position
+        # uy varies with y: flow in y-direction depends on y-position
         means_y = 0.1 * np.sin(2 * np.pi * Y / Ny)
         
-        # μᵧ varies with z: flow in z-direction depends on z-position
+        # uz varies with z: flow in z-direction depends on z-position
         # Also add small x-variation for better visualization in 2D slices
         means_z = 0.1 * np.sin(2 * np.pi * Z / Nz) + 0.02 * np.sin(2 * np.pi * X / Nx)
         
@@ -100,29 +110,29 @@ class QuantumDiscreteGaussian:
         """
         Calculate classical discrete Gaussian probabilities for outcomes {-1, 0, 1}
         
-        MATHEMATICAL FOUNDATION:
-        Discrete Gaussian distribution: P(x) = exp(-(x-μ)²/(2σ²)) / Z
-        - μ (mu): mean parameter (varies spatially as sine wave across grid)
-        - σ² (sigma_sq): variance parameter (varies spatially as sine wave across grid)
-        - Z: normalization constant (partition function) ensuring Σ P(x) = 1
-        
-        PHYSICAL INTERPRETATION:
-        - When μ > 0: probability mass shifts toward +1 outcome
-        - When μ < 0: probability mass shifts toward -1 outcome  
-        - When μ = 0: symmetric distribution peaked at 0
-        - Larger σ²: broader distribution (more uncertainty)
-        - Smaller σ²: sharper distribution (more certainty)
-        
-        This classical calculation serves as the "ground truth" for our quantum implementation.
+    MATHEMATICAL FOUNDATION:
+    Discrete Gaussian distribution: P(x) = exp(-(x-mu)**2/(2*sigma_sq)) / Z
+    - mu: mean parameter (varies spatially as sine wave across grid)
+    - sigma_sq: variance parameter (varies spatially as sine wave across grid)
+    - Z: normalization constant (partition function) ensuring Sum P(x) = 1
+
+    PHYSICAL INTERPRETATION:
+    - When mu > 0: probability mass shifts toward +1 outcome
+    - When mu < 0: probability mass shifts toward -1 outcome
+    - When mu == 0: symmetric distribution peaked at 0
+    - Larger sigma_sq: broader distribution (more uncertainty)
+    - Smaller sigma_sq: sharper distribution (more certainty)
+
+    This classical calculation serves as the "ground truth" for our quantum implementation.
         """
-        # STEP 1: Compute unnormalized probabilities using Gaussian kernel
-        # For each outcome x ∈ {-1, 0, 1}, calculate exp(-(x-μ)²/(2σ²))
-        # This measures the "fitness" or "likelihood" of each outcome given parameters μ, σ²
+    # STEP 1: Compute unnormalized probabilities using Gaussian kernel
+    # For each outcome x in {-1, 0, 1}, calculate exp(-(x-mu)**2/(2*sigma_sq))
+    # This measures the "fitness" or "likelihood" of each outcome given parameters mu, sigma_sq
         unnorm_probs = np.array([
             np.exp(-(k - mu)**2 / (2 * sigma_sq)) for k in self.outcomes
         ])
         
-        # STEP 2: Normalize to satisfy probability axiom: Σ P(x) = 1
+    # STEP 2: Normalize to satisfy probability axiom: Sum P(x) = 1
         # Z is the partition function (total unnormalized probability mass)
         Z = np.sum(unnorm_probs)
         normalized_probs = unnorm_probs / Z
@@ -138,23 +148,23 @@ class QuantumDiscreteGaussian:
         MATHEMATICAL FOUNDATION:
         Reference: Section 2.2.4 of Sawant (2024)
         https://doi.org/10.3929/ethz-b-000607045
-        
-        Using the product form of Maxwell-Boltzmann distribution:
-        p = u*u + T  (where T is temperature/variance)
-        
-        Probabilities for each discrete velocity:
-        P(-1) = -0.5 * u + 0.5 * p  (backward motion)
-        P(0)  = -p + 1.0            (at rest)
-        P(+1) = +0.5 * u + 0.5 * p  (forward motion)
-        
-        These probabilities ensure:
-        - Sum to 1 (normalization)
-        - Mean = u (by construction)
-        - Variance = T (temperature)
-        
-        PARAMETERS:
-        - mu: mean velocity (u in the paper)
-        - sigma_sq: temperature/variance (T in the paper)
+
+    Using the product form of Maxwell-Boltzmann distribution:
+    p = mu**2 + sigma_sq  (where sigma_sq = T is temperature/variance)
+
+    Probabilities for each discrete velocity:
+    P(-1) = -0.5 * mu + 0.5 * p  (backward motion)
+    P(0)  = -p + 1.0              (at rest)
+    P(+1) = +0.5 * mu + 0.5 * p   (forward motion)
+
+    These probabilities ensure:
+    - Sum to 1 (normalization)
+    - Mean = mu (physically: velocity u)
+    - Variance = sigma_sq (physically: temperature T)
+
+    PARAMETERS:
+    - mu: mean velocity (physically: u)
+    - sigma_sq: variance (physically: T)
         
         RETURNS:
         Array [P(-1), P(0), P(+1)] - normalized probability distribution
@@ -187,13 +197,13 @@ class QuantumDiscreteGaussian:
         
         MATHEMATICAL MAPPING:
         Classical: P(-1), P(0), P(+1) ∈ [0,1] with P(-1) + P(0) + P(+1) = 1
-        Quantum:   |ψ⟩ = √P(-1)|00⟩ + √P(+1)|01⟩ + √P(0)|10⟩
+    Quantum:   |psi> = np.sqrt(P(-1))|00> + np.sqrt(P(+1))|01> + np.sqrt(P(0))|10>
         
-        SYMMETRIC QUBIT ENCODING SCHEME:
-        - |00⟩ (both qubits in state 0) → outcome -1
-        - |01⟩ (first qubit 0, second qubit 1) → outcome +1
-        - |10⟩ (first qubit 1, second qubit 0) → outcome 0
-        - |11⟩ (both qubits in state 1) → unused
+    SYMMETRIC QUBIT ENCODING SCHEME:
+    - |00> (both qubits in state 0) -> outcome -1
+    - |01> (first qubit 0, second qubit 1) -> outcome +1
+    - |10> (first qubit 1, second qubit 0) -> outcome 0
+    - |11> (both qubits in state 1) -> unused
         
         ADVANTAGES OF THIS DECOMPOSITION:
         - First qubit splits "moving" {-1, +1} vs "stationary" {0}
@@ -215,13 +225,13 @@ class QuantumDiscreteGaussian:
         # 
         # MATHEMATICAL FOUNDATION (from Section 2.2.4 of https://doi.org/10.3929/ethz-b-000607045):
         # First qubit encodes: P(outcome ∈ {-1, +1}) vs P(outcome = 0)
-        # P(first qubit = 0) = P(-1) + P(+1) = p = μ² + T
-        # P(first qubit = 1) = P(0) = -p + 1.0
+    # P(first qubit = 0) = P(-1) + P(+1) = p = mu**2 + sigma_sq
+    # P(first qubit = 1) = P(0) = -p + 1.0
         #
         # QUANTUM GATE FORMULATION:
-        # RY gate (rotation around Y-axis): RY(θ)|0⟩ = cos(θ/2)|0⟩ + sin(θ/2)|1⟩
-        # We want: |cos(θ/2)|² = P(first=0) and |sin(θ/2)|² = P(first=1)
-        # Solving: cos²(θ/2) = p → θ₁ = 2*arccos(√p) = 2*arccos(√(μ² + T))
+        # RY gate (rotation around Y-axis): RY(theta)|0> = cos(theta/2)|0> + sin(theta/2)|1>
+        # We want: |cos(theta/2)|**2 = P(first=0) and |sin(theta/2)|**2 = P(first=1)
+    # Solving: cos**2(theta/2) = p -> theta1 = 2 * np.arccos(np.sqrt(p)) = 2 * np.arccos(np.sqrt(mu**2 + sigma_sq))
         # 
         # This angle depends only on the combined parameter p, making it very stable!
         
@@ -229,12 +239,12 @@ class QuantumDiscreteGaussian:
         
         if prob_first_0 > 0 and prob_first_0 < 1:
             # GENERAL CASE: Create superposition between motion and rest
-            theta1 = 2 * np.arccos(np.sqrt(prob_first_0))  # Calculate rotation angle
-            qc.ry(theta1, 0)  # Apply Y-rotation to first qubit
+                theta1 = 2 * np.arccos(np.sqrt(prob_first_0))  # Calculate rotation angle
+                qc.ry(theta1, 0)  # Apply Y-rotation to first qubit
             
         elif prob_first_0 == 0:
             # EDGE CASE: Only outcome 0 possible (P(-1)=P(+1)=0, P(0)=1)
-            qc.x(0)  # X gate: |0⟩ → |1⟩ (deterministic flip to rest state)
+            qc.x(0)  # X gate: |0> -> |1> (deterministic flip to rest state)
             
         # EDGE CASE: If prob_first_0 == 1, first qubit stays |0⟩ (no gates needed)
         # This happens when P(0) = 0, so only {-1, +1} outcomes are possible
@@ -246,17 +256,17 @@ class QuantumDiscreteGaussian:
         #
         # MATHEMATICAL FOUNDATION (using Bayes' rule):  
         # P(outcome=+1 | first=0) = P(+1) / (P(-1) + P(+1))
-        #                         = (0.5*μ + 0.5*p) / p
-        #                         = 0.5*(1 + μ/p)
+    #                         = (0.5*mu + 0.5*p) / p
+    #                         = 0.5*(1 + mu/p)
         #
         # This conditional probability is symmetric around 0.5:
-        # - When μ > 0: favors +1 (forward motion)
-        # - When μ < 0: favors -1 (backward motion)
-        # - When μ = 0: equal probability (no net flow)
+    # - When mu > 0: favors +1 (forward motion)
+    # - When mu < 0: favors -1 (backward motion)
+    # - When mu = 0: equal probability (no net flow)
         #
         # QUANTUM IMPLEMENTATION:
         # Use controlled-RY gate: rotates second qubit only when first qubit = 0
-        # Angle: θ₂ = 2*arcsin(√(P(+1|first=0))) = 2*arcsin(√(0.5*(1 + μ/p)))
+    # Angle: theta2 = 2*arcsin(np.sqrt(P(+1|first=0))) = 2*arcsin(np.sqrt(0.5*(1 + mu/p)))
         #
         # The control ensures this rotation applies only in the "moving" subspace!
         
@@ -273,14 +283,14 @@ class QuantumDiscreteGaussian:
                 
                 # QUANTUM TRICK: Convert "control on |0⟩" to "control on |1⟩"
                 # Most quantum gates control on |1⟩ state, but we need control on |0⟩
-                qc.x(0)              # X gate: |0⟩ ↔ |1⟩ (flip first qubit state)
-                qc.cry(theta2, 0, 1) # Controlled-RY: rotate qubit 1 when qubit 0 is |1⟩ (originally |0⟩)
+                qc.x(0)              # X gate: |0> <-> |1> (flip first qubit state)
+                qc.cry(theta2, 0, 1) # Controlled-RY: rotate qubit 1 when qubit 0 is |1> (originally |0>)
                 qc.x(0)              # X gate: flip first qubit back to original state
                 
             elif prob_second_1_given_first_0 == 1:
                 # EDGE CASE: Only outcome +1 possible when first qubit is |0⟩ (P(-1)=0, P(+1)>0)
-                qc.x(0)          # Flip first qubit: |0⟩ → |1⟩  
-                qc.cx(0, 1)      # CNOT gate: if control=|1⟩ (originally |0⟩), flip target qubit
+                qc.x(0)          # Flip first qubit: |0> -> |1>  
+                qc.cx(0, 1)      # CNOT gate: if control=|1> (originally |0>), flip target qubit
                 qc.x(0)          # Restore first qubit to original state
                 
             # EDGE CASE: If prob_second_1_given_first_0 == 0, second qubit stays |0⟩
@@ -288,19 +298,19 @@ class QuantumDiscreteGaussian:
         
         # STEP 5: QUANTUM MEASUREMENT
         #
-        # NEW MEASUREMENT SCHEME:
-        # Measure both qubits simultaneously to get 2-bit classical string
-        # |00⟩ → classical bits "00" → decode to outcome -1  
-        # |01⟩ → classical bits "01" → decode to outcome +1  [CHANGED]
-        # |10⟩ → classical bits "10" → decode to outcome 0   [CHANGED]
-        # |11⟩ → classical bits "11" → unused (should have 0 probability)
+    # NEW MEASUREMENT SCHEME:
+    # Measure both qubits simultaneously to get 2-bit classical string
+    # |00> -> classical bits "00" -> decode to outcome -1
+    # |01> -> classical bits "01" -> decode to outcome +1  [CHANGED]
+    # |10> -> classical bits "10" -> decode to outcome 0   [CHANGED]
+    # |11> -> classical bits "11" -> unused (should have 0 probability)
         #
         # QISKIT CONVENTION:
         # qc.measure(qubit_index, classical_bit_index) 
         # Stores measurement result of quantum qubit in classical bit register
         
-        qc.measure(0, 0)  # Measure first qubit → store result in classical bit 0
-        qc.measure(1, 1)  # Measure second qubit → store result in classical bit 1
+        qc.measure(0, 0)  # Measure first qubit -> store result in classical bit 0
+        qc.measure(1, 1)  # Measure second qubit -> store result in classical bit 1
         
         # CIRCUIT COMPLETE: Returns quantum circuit ready for execution
         # This symmetric decomposition produces identical probability distributions
@@ -316,19 +326,19 @@ class QuantumDiscreteGaussian:
         This function implements "amplitude encoding" - a fundamental quantum technique where
         classical probabilities are encoded as quantum amplitudes in a superposition state.
         
-        MATHEMATICAL MAPPING:
-        Classical: P(-1), P(0), P(1) ∈ [0,1] with P(-1) + P(0) + P(1) = 1
-        Quantum:   |ψ = √P(-1)|00 + √P(0)|01 + √P(1)|10
+    MATHEMATICAL MAPPING:
+    Classical: P(-1), P(0), P(1) ∈ [0,1] with P(-1) + P(0) + P(1) = 1
+    Quantum:   |psi = √P(-1)|00 + √P(0)|01 + √P(1)|10
         
         WHY SQUARE ROOTS?
-        Born's rule in quantum mechanics: |amplitude|² = probability
+    Born's rule in quantum mechanics: |amplitude|**2 = probability
         So if amplitude = √P, then |√P|² = P (correct probability)
         
-        QUBIT ENCODING SCHEME:
-        - |00 (both qubits in state 0) → outcome -1
-        - |01 (first qubit 0, second qubit 1) → outcome 0  
-        - |10 (first qubit 1, second qubit 0) → outcome +1
-        - |11 (both qubits in state 1) → unused (helps with circuit construction)
+    QUBIT ENCODING SCHEME:
+    - |00 (both qubits in state 0) → outcome -1
+    - |01 (first qubit 0, second qubit 1) → outcome 0  
+    - |10 (first qubit 1, second qubit 0) → outcome +1
+    - |11 (both qubits in state 1) → unused (helps with circuit construction)
         
         QUANTUM ADVANTAGE:
         Once encoded, quantum circuits can manipulate all outcomes simultaneously
@@ -355,9 +365,9 @@ class QuantumDiscreteGaussian:
         # P(first qubit = 1) = P(+1) = probability of positive outcome
         #
         # QUANTUM GATE SELECTION:
-        # RY gate (rotation around Y-axis) creates superposition: RY(θ)|0 = cos(θ/2)|0 + sin(θ/2)|1
-        # We want: |cos(θ/2)|² = P(first=0) and |sin(θ/2)|² = P(first=1)
-        # Solving: cos²(θ/2) = prob_first_0 → θ = 2*arccos(√prob_first_0)
+        # RY gate (rotation around Y-axis) creates superposition: RY(theta)|0 = cos(theta/2)|0 + sin(theta/2)|1
+        # We want: |cos(theta/2)|**2 = P(first=0) and |sin(theta/2)|**2 = P(first=1)
+    # Solving: cos**2(theta/2) = prob_first_0 -> theta = 2*arccos(np.sqrt(prob_first_0))
         
         prob_first_0 = p_minus1 + p_0  # Combined probability for {-1, 0} outcomes
         
@@ -415,24 +425,24 @@ class QuantumDiscreteGaussian:
         
         # STEP 5: QUANTUM MEASUREMENT
         #
-        # MEASUREMENT FOUNDATION:
-        # Quantum measurement collapses superposition |ψ = Σᵢ αᵢ|i into classical outcome
-        # Probability of measuring state |i = |αᵢ|² (Born's rule)
-        # After measurement, quantum state is destroyed and becomes classical
+    # MEASUREMENT FOUNDATION:
+    # Quantum measurement collapses superposition |psi = Sum_i alpha_i|i into classical outcome
+    # Probability of measuring state |i = |alpha_i|^2 (Born's rule)
+    # After measurement, quantum state is destroyed and becomes classical
         #
-        # OUR MEASUREMENT SCHEME:
-        # Measure both qubits simultaneously to get 2-bit classical string
-        # |00 → classical bits "00" → decode to outcome -1  
-        # |01 → classical bits "01" → decode to outcome 0
-        # |10 → classical bits "10" → decode to outcome +1
-        # |11 → classical bits "11" → unused (should have 0 probability by construction)
+    # OUR MEASUREMENT SCHEME:
+    # Measure both qubits simultaneously to get 2-bit classical string
+    # |00> -> classical bits "00" -> decode to outcome -1
+    # |01> -> classical bits "01" -> decode to outcome 0
+    # |10> -> classical bits "10" -> decode to outcome +1
+    # |11> -> classical bits "11" -> unused (should have 0 probability by construction)
         #
         # QISKIT CONVENTION:
         # qc.measure(qubit_index, classical_bit_index) 
         # Stores measurement result of quantum qubit in classical bit register
         
-        qc.measure(0, 0)  # Measure first qubit → store result in classical bit 0
-        qc.measure(1, 1)  # Measure second qubit → store result in classical bit 1
+        qc.measure(0, 0)  # Measure first qubit -> store result in classical bit 0
+        qc.measure(1, 1)  # Measure second qubit -> store result in classical bit 1
         
         # CIRCUIT COMPLETE: Returns quantum circuit ready for execution
         # When run multiple times (shots), produces random samples from discrete Gaussian
@@ -440,24 +450,24 @@ class QuantumDiscreteGaussian:
     
     def create_quantum_circuit_parametric(self, mu: float, sigma_sq: float) -> QuantumCircuit:
         """
-        Create symmetric quantum circuit directly from (mu, sigma_sq) parameters.
+        Create symmetric quantum circuit directly from (μ, σ²) parameters.
         
         DIRECT PARAMETRIZATION:
         This method computes gate angles directly from Maxwell-Boltzmann parameters
         without the intermediate step of computing classical probabilities.
         
-        MATHEMATICAL FOUNDATION:
-        For velocity encoding with p = mu² + sigma_sq:
-        - P(-1) = -0.5*mu + 0.5*p
-        - P(0)  = -p + 1
-        - P(+1) = +0.5*mu + 0.5*p
-        
-        SYMMETRIC DECOMPOSITION ANGLES:
-        - θ₁ = 2*arccos(√p) where p = mu² + sigma_sq
-          This angle splits {-1,+1} (motion) vs {0} (rest)
+                MATHEMATICAL FOUNDATION:
+                For velocity encoding with p = mu**2 + sigma_sq:
+                - P(-1) = -0.5*mu + 0.5*p
+                - P(0)  = -p + 1
+                - P(+1) = +0.5*mu + 0.5*p
+
+                SYMMETRIC DECOMPOSITION ANGLES:
+                - theta1 = 2*arccos(sqrt(p)) where p = mu**2 + sigma_sq
+                    This angle splits {-1,+1} (motion) vs {0} (rest)
           
-        - θ₂ = 2*arcsin(√[0.5*(1 + mu/p)])
-          This angle splits -1 vs +1 given motion
+                - theta2 = 2*arcsin(sqrt(0.5*(1 + mu/p)))
+                    This angle splits -1 vs +1 given motion
         
         ADVANTAGES:
         - No classical probability computation needed
@@ -465,25 +475,25 @@ class QuantumDiscreteGaussian:
         - Direct mathematical relationship to physical parameters
         - Only works with symmetric circuit (simpler formulas)
         
-        PARAMETERS:
-        - mu: mean velocity (Maxwell-Boltzmann parameter)
-        - sigma_sq: temperature/variance (Maxwell-Boltzmann parameter)
+    PARAMETERS:
+    - mu: mean (physically: velocity u)
+    - sigma_sq: variance (physically: temperature T)
         
         CONSTRAINT:
-        - Requires sigma_sq < 1 for valid probabilities (T < 1 constraint)
+        - Requires σ² < 1 for valid probabilities (physical: T < 1 constraint)
         """
-        # STEP 1: Compute the key parameter p = mu² + sigma_sq
-        # This represents the combined probability of motion: P(-1) + P(+1)
+    # STEP 1: Compute the key parameter p = mu**2 + sigma_sq
+    # This represents the combined probability of motion: P(-1) + P(+1)
         p = mu * mu + sigma_sq
         
         # STEP 2: Validate physical constraints
         # For valid probabilities, we need 0 < p < 1
         # This ensures all probabilities are positive and sum to 1
         if p <= 0:
-            raise ValueError(f"Invalid parameters: p = mu² + sigma_sq = {p:.4f} must be positive")
+            raise ValueError(f"Invalid parameters: p = mu**2 + sigma_sq = {p:.4f} must be positive")
         if p >= 1:
-            raise ValueError(f"Invalid parameters: p = mu² + sigma_sq = {p:.4f} must be < 1 "
-                           f"(Maxwell-Boltzmann constraint T < 1 violated)")
+            raise ValueError(f"Invalid parameters: p = mu**2 + sigma_sq = {p:.4f} must be < 1 "
+                           f"(physical constraint T < 1 violated)")
         
         # STEP 3: Initialize quantum circuit with 2 qubits + 2 classical bits
         qc = QuantumCircuit(2, 2)
@@ -499,7 +509,7 @@ class QuantumDiscreteGaussian:
         # - sin²(θ₁/2) = 1-p (probability of rest)
         #
         # SIMPLIFICATION from velocity encoding:
-        # Original: P(-1) + P(+1) = (-0.5*mu + 0.5*p) + (+0.5*mu + 0.5*p) = p
+        # Original: P(-1) + P(+1) = (-0.5*μ + 0.5*p) + (+0.5*μ + 0.5*p) = p
         # Direct: θ₁ = 2*arccos(√p) - no probability computation needed!
         
         theta1 = 2 * np.arccos(np.sqrt(p))
@@ -507,20 +517,20 @@ class QuantumDiscreteGaussian:
         
         # STEP 5: SECOND ROTATION (CONDITIONAL) - Split -1 vs +1 given motion
         #
-        # DIRECT ANGLE FORMULA:
-        # θ₂ = 2*arcsin(√[0.5*(1 + mu/p)])
+    # DIRECT ANGLE FORMULA:
+    # theta2 = 2*arcsin(sqrt(0.5*(1 + mu/p)))
         #
         # PHYSICAL INTERPRETATION:
         # Given the particle is moving (first qubit = 0), this angle determines
         # whether it moves left (-1) or right (+1)
-        # - cos²(θ₂/2) = P(-1|motion) = [-0.5*mu + 0.5*p]/p = 0.5*(1 - mu/p)
-        # - sin²(θ₂/2) = P(+1|motion) = [+0.5*mu + 0.5*p]/p = 0.5*(1 + mu/p)
+    # - cos²(theta2/2) = P(-1|motion) = [-0.5*mu + 0.5*p]/p = 0.5*(1 - mu/p)
+    # - sin²(theta2/2) = P(+1|motion) = [+0.5*mu + 0.5*p]/p = 0.5*(1 + mu/p)
         #
-        # SIMPLIFICATION from velocity encoding:
-        # Conditional probability: P(+1|motion) = P(+1)/[P(-1)+P(+1)]
-        #                                        = [+0.5*mu + 0.5*p]/p
-        #                                        = 0.5*(1 + mu/p)
-        # Direct: θ₂ = 2*arcsin(√[0.5*(1 + mu/p)])
+    # SIMPLIFICATION from velocity encoding:
+    # Conditional probability: P(+1|motion) = P(+1)/[P(-1)+P(+1)]
+    #                                        = [+0.5*mu + 0.5*p]/p
+    #                                        = 0.5*(1 + mu/p)
+    # Direct: theta2 = 2*arcsin(sqrt(0.5*(1 + mu/p)))
         
         # Calculate conditional probability directly
         prob_plus1_given_motion = 0.5 * (1.0 + mu / p)
@@ -543,10 +553,10 @@ class QuantumDiscreteGaussian:
         qc.measure(0, 0)  # Measure first qubit
         qc.measure(1, 1)  # Measure second qubit
         
-        # CIRCUIT COMPLETE: Direct parametrization without classical probability computation!
+    # CIRCUIT COMPLETE: Direct parametrization without classical probability computation!
         return qc
     
-    def create_quantum_circuit_3d_parametric(self, mu_x: float, mu_y: float, mu_z: float, T: float) -> QuantumCircuit:
+    def create_quantum_circuit_3d_parametric(self, mu_x: float, mu_y: float, mu_z: float, sigma_sq: float) -> QuantumCircuit:
         """
         Create 6-qubit circuit for 3D velocity sampling with parallel execution.
         
@@ -556,14 +566,15 @@ class QuantumDiscreteGaussian:
         sequential execution of three 1D circuits.
         
         QUBIT ALLOCATION:
-        - Qubits 0-1: vₓ component (x-direction velocity)
-        - Qubits 2-3: vᵧ component (y-direction velocity)
-        - Qubits 4-5: vᵧ component (z-direction velocity)
+    - Qubits 0-1: v_x component (x-direction velocity)
+    - Qubits 2-3: v_y component (y-direction velocity)
+    - Qubits 4-5: v_z component (z-direction velocity)
         
         PHYSICAL INTERPRETATION:
-        All components share same temperature T (isotropic kinetic energy) but have
-        different mean velocities (directional flow). This represents a 3D Maxwell-
-        Boltzmann distribution for lattice velocities in 3D Lattice Boltzmann Method.
+        All components share same temperature/variance (isotropic kinetic energy) but have
+        different mean velocities (ux, uy, uz - directional flow). This represents 
+        a 3D Maxwell-Boltzmann distribution for lattice velocities in 3D Lattice 
+        Boltzmann Method.
         
         ENCODING SCHEME (per dimension):
         |00⟩ → -1 (negative velocity)
@@ -572,15 +583,15 @@ class QuantumDiscreteGaussian:
         |11⟩ → unused
         
         3D MEASUREMENT:
-        Single measurement yields 6-bit string → (vₓ, vᵧ, vᵧ) tuple
-        Example: |001001⟩ → vₓ=+1, vᵧ=-1, vᵧ=+1
+    Single measurement yields 6-bit string -> (v_x, v_y, v_z) tuple
+    Example: |001001> -> v_x=+1, v_y=-1, v_z=+1
         
         PARAMETERS:
-        - mu_x, mu_y, mu_z: mean velocities in each dimension
-        - T: temperature/variance (shared across all dimensions)
+        - mu_x, mu_y, mu_z: mean velocities μx, μy, μz (physically: ux, uy, uz)
+        - sigma_sq: variance σ² (physically: temperature T, same for all dimensions)
         
         CONSTRAINT:
-        - Requires T < 1 and muᵢ² + T < 1 for all i ∈ {x,y,z}
+        - Requires sigma_sq < 1 and mu_i² + sigma_sq < 1 for all i ∈ {x,y,z}
         
         PARALLELIZATION BENEFIT:
         Time complexity: T_circuit (not 3×T_circuit for sequential)
@@ -589,13 +600,13 @@ class QuantumDiscreteGaussian:
         qc = QuantumCircuit(6, 6)
         
         # STEP 2: X-COMPONENT (qubits 0-1) - Parallel execution
-        p_x = mu_x * mu_x + T
+        p_x = mu_x * mu_x + sigma_sq
         
         # Validate physical constraints
         if p_x <= 0:
-            raise ValueError(f"Invalid parameters for X: p_x = μ_x² + T = {p_x:.4f} must be positive")
+            raise ValueError(f"Invalid parameters for X: p_x = mu_x² + sigma_sq = {p_x:.4f} must be positive")
         if p_x >= 1:
-            raise ValueError(f"Invalid parameters for X: p_x = μ_x² + T = {p_x:.4f} must be < 1")
+            raise ValueError(f"Invalid parameters for X: p_x = mu_x² + sigma_sq = {p_x:.4f} must be < 1")
         
         # Calculate angles directly from parameters
         theta1_x = 2 * np.arccos(np.sqrt(p_x))
@@ -613,12 +624,12 @@ class QuantumDiscreteGaussian:
         qc.x(0)
         
         # STEP 3: Y-COMPONENT (qubits 2-3) - Parallel execution
-        p_y = mu_y * mu_y + T
+        p_y = mu_y * mu_y + sigma_sq
         
         if p_y <= 0:
-            raise ValueError(f"Invalid parameters for Y: p_y = μ_y² + T = {p_y:.4f} must be positive")
+            raise ValueError(f"Invalid parameters for Y: p_y = mu_y² + sigma_sq = {p_y:.4f} must be positive")
         if p_y >= 1:
-            raise ValueError(f"Invalid parameters for Y: p_y = μ_y² + T = {p_y:.4f} must be < 1")
+            raise ValueError(f"Invalid parameters for Y: p_y = mu_y² + sigma_sq = {p_y:.4f} must be < 1")
         
         theta1_y = 2 * np.arccos(np.sqrt(p_y))
         prob_plus1_y = 0.5 * (1.0 + mu_y / p_y)
@@ -635,12 +646,12 @@ class QuantumDiscreteGaussian:
         qc.x(2)
         
         # STEP 4: Z-COMPONENT (qubits 4-5) - Parallel execution
-        p_z = mu_z * mu_z + T
+        p_z = mu_z * mu_z + sigma_sq
         
         if p_z <= 0:
-            raise ValueError(f"Invalid parameters for Z: p_z = μ_z² + T = {p_z:.4f} must be positive")
+            raise ValueError(f"Invalid parameters for Z: p_z = mu_z² + sigma_sq = {p_z:.4f} must be positive")
         if p_z >= 1:
-            raise ValueError(f"Invalid parameters for Z: p_z = μ_z² + T = {p_z:.4f} must be < 1")
+            raise ValueError(f"Invalid parameters for Z: p_z = mu_z² + sigma_sq = {p_z:.4f} must be < 1")
         
         theta1_z = 2 * np.arccos(np.sqrt(p_z))
         prob_plus1_z = 0.5 * (1.0 + mu_z / p_z)
@@ -738,10 +749,10 @@ class QuantumDiscreteGaussian:
         
         DIRECT PARAMETRIC SAMPLING:
         This method bypasses classical probability computation entirely by computing
-        gate angles directly from (mu, sigma_sq) parameters.
+        gate angles directly from (μ, σ²) parameters.
         
         WORKFLOW:
-        1. Direct angle computation: θ₁, θ₂ = f(mu, sigma_sq) - no probability step!
+        1. Direct angle computation: θ₁, θ₂ = f(μ, σ²) - no probability step!
         2. Quantum circuit creation: Build circuit with computed angles
         3. Quantum execution: Run circuit multiple times (shots)
         4. Classical postprocessing: Decode measurement results
@@ -753,13 +764,13 @@ class QuantumDiscreteGaussian:
         - Only available for symmetric circuit (simpler angle formulas)
         
         PARAMETERS:
-        - mu: mean velocity (Maxwell-Boltzmann parameter)
-        - sigma_sq: temperature/variance (Maxwell-Boltzmann parameter)
+        - mu: mean μ (physically: velocity u)
+        - sigma_sq: variance σ² (physically: temperature T)
         - shots: number of quantum circuit executions (sample size)
         
         CONSTRAINT:
         - Only works with symmetric circuit (circuit_type='symmetric')
-        - Requires sigma_sq < 1 for valid probabilities
+        - Requires σ² < 1 for valid probabilities (physical: T < 1)
         """
         # STEP 1: Validate circuit type
         if self.circuit_type != 'symmetric':
@@ -789,14 +800,14 @@ class QuantumDiscreteGaussian:
         mu_x: float, 
         mu_y: float, 
         mu_z: float, 
-        T: float, 
+        sigma_sq: float, 
         shots: int = 1000
     ) -> Dict[Tuple[int, int, int], int]:
         """
         Execute quantum sampling for 3D velocity distribution at a single grid point.
         
         WORKFLOW:
-        1. Direct circuit creation: Build 6-qubit circuit from (μₓ, μᵧ, μᵧ, T)
+        1. Direct circuit creation: Build 6-qubit circuit from (μₓ, μᵧ, μᵧ, σ²)
         2. Quantum execution: Run circuit multiple times (shots) on simulator
         3. Measurement: Single measurement yields full 3D velocity tuple
         4. Decoding: Convert 6-bit strings to (vₓ, vᵧ, vᵧ) tuples
@@ -806,8 +817,8 @@ class QuantumDiscreteGaussian:
         Time = T_circuit (not 3×T_circuit for sequential 1D sampling).
         
         PARAMETERS:
-        - mu_x, mu_y, mu_z: mean velocities in each dimension
-        - T: temperature/variance (shared isotropic property)
+        - mu_x, mu_y, mu_z: mean velocities μx, μy, μz (physically: ux, uy, uz)
+        - sigma_sq: variance σ² (physically: temperature T, shared isotropic property)
         - shots: number of quantum circuit executions (sample size)
         
         OUTPUT:
@@ -815,10 +826,10 @@ class QuantumDiscreteGaussian:
         Example: {(-1, 0, +1): 235, (0, 0, 0): 189, ...}
         
         CONSTRAINT:
-        - Requires T < 1 and μᵢ² + T < 1 for all i ∈ {x,y,z}
+        - Requires sigma_sq < 1 and mu_i² + sigma_sq < 1 for all i ∈ {x,y,z}
         """
         # STEP 1: Create 3D quantum circuit directly from parameters
-        qc = self.create_quantum_circuit_3d_parametric(mu_x, mu_y, mu_z, T)
+        qc = self.create_quantum_circuit_3d_parametric(mu_x, mu_y, mu_z, sigma_sq)
         
         # STEP 2: Compile circuit for quantum simulator
         simulator = AerSimulator()
@@ -870,8 +881,7 @@ class QuantumDiscreteGaussian:
         mean_x = sum(vx * count for (vx, _, _), count in velocity_counts.items()) / total_shots
         mean_y = sum(vy * count for (_, vy, _), count in velocity_counts.items()) / total_shots
         mean_z = sum(vz * count for (_, _, vz), count in velocity_counts.items()) / total_shots
-        
-        # Compute second moments E[vᵢ²]
+    # Compute second moments E[v_i^2]
         mean_x2 = sum(vx**2 * count for (vx, _, _), count in velocity_counts.items()) / total_shots
         mean_y2 = sum(vy**2 * count for (_, vy, _), count in velocity_counts.items()) / total_shots
         mean_z2 = sum(vz**2 * count for (_, _, vz), count in velocity_counts.items()) / total_shots
@@ -895,7 +905,7 @@ class QuantumDiscreteGaussian:
         mu_x: float,
         mu_y: float,
         mu_z: float,
-        T: float
+        sigma_sq: float
     ) -> Dict[str, float]:
         """
         Compute theoretical moments from Maxwell-Boltzmann parameters.
@@ -913,8 +923,8 @@ class QuantumDiscreteGaussian:
         - Var[vₓ], Var[vᵧ], Var[vᵧ] computed independently
         
         PARAMETERS:
-        - mu_x, mu_y, mu_z: mean velocities
-        - T: temperature (variance parameter)
+        - mu_x, mu_y, mu_z: mean velocities μx, μy, μz (physically: ux, uy, uz)
+        - sigma_sq: variance σ² (physically: temperature T, same for all dimensions)
         
         OUTPUT:
         Dictionary with theoretical moment values
@@ -924,7 +934,7 @@ class QuantumDiscreteGaussian:
         
         for dim, mu in [('x', mu_x), ('y', mu_y), ('z', mu_z)]:
             # Compute 1D probabilities for this dimension
-            probs_1d = self.discrete_gaussian_probs(mu, T)
+            probs_1d = self.discrete_gaussian_probs(mu, sigma_sq)
             p_minus1, p_0, p_plus1 = probs_1d
             
             # Theoretical mean: E[v] = Σ v * P(v)
@@ -993,12 +1003,11 @@ class QuantumDiscreteGaussian:
         mean_y = np.sum(probs_27 * vY) / rho
         mean_z = np.sum(probs_27 * vZ) / rho
         
-        # Second moments: E[cᵢ²] = Σ fⱼ cⱼᵢ²
+        # Second moments: E[c_i^2] = sum f_j * c_j_i^2
         mean_x2 = np.sum(probs_27 * vX**2) / rho
         mean_y2 = np.sum(probs_27 * vY**2) / rho
         mean_z2 = np.sum(probs_27 * vZ**2) / rho
-        
-        # Variance: Var[uᵢ] = E[cᵢ²] - E[cᵢ]²
+
         var_x = mean_x2 - mean_x**2
         var_y = mean_y2 - mean_y**2
         var_z = mean_z2 - mean_z**2
@@ -1056,7 +1065,7 @@ class QuantumDiscreteGaussian:
         mu_x: float, 
         mu_y: float, 
         mu_z: float, 
-        T: float
+        sigma_sq: float
     ) -> np.ndarray:
         """
         Compute all 27 probabilities in D3Q27 LBM ordering.
@@ -1073,8 +1082,8 @@ class QuantumDiscreteGaussian:
         [0]: (0,0,0), [1]: (+1,0,0), [2]: (-1,0,0), etc.
         
         PARAMETERS:
-        - mu_x, mu_y, mu_z: mean velocities in each direction
-        - T: temperature/variance
+        - mu_x, mu_y, mu_z: mean velocities μx, μy, μz (physically: ux, uy, uz)
+        - sigma_sq: variance σ² (physically: temperature T, same for all dimensions)
         
         RETURNS:
         np.ndarray with shape (27,): probabilities in LBM ordering
@@ -1083,14 +1092,14 @@ class QuantumDiscreteGaussian:
         ```python
         # In your LBM code:
         qdg = QuantumDiscreteGaussian(circuit_type='symmetric')
-        probs = qdg.compute_3d_probability_distribution_lbm_order(mu_x, mu_y, mu_z, T)
+        probs = qdg.compute_3d_probability_distribution_lbm_order(mu_x, mu_y, mu_z, sigma_sq)
         # probs[i] is the probability for velocity direction i
         ```
         """
         # Get 1D probabilities for each dimension
-        probs_x = self.discrete_gaussian_probs(mu_x, T)  # [P(-1), P(0), P(+1)]
-        probs_y = self.discrete_gaussian_probs(mu_y, T)
-        probs_z = self.discrete_gaussian_probs(mu_z, T)
+        probs_x = self.discrete_gaussian_probs(mu_x, sigma_sq)  # [P(-1), P(0), P(+1)]
+        probs_y = self.discrete_gaussian_probs(mu_y, sigma_sq)
+        probs_z = self.discrete_gaussian_probs(mu_z, sigma_sq)
         
         # Create mapping from velocity value to probability index
         # P(-1) at index 0, P(0) at index 1, P(+1) at index 2
@@ -1597,9 +1606,9 @@ class QuantumDiscreteGaussian:
         
         # Left y-axis for mean (blue)
         color1 = 'tab:blue'
-        ax1.plot(x_points, means, color=color1, marker='o', linewidth=2, markersize=6, label='Mean μ(x)')
+        ax1.plot(x_points, means, color=color1, marker='o', linewidth=2, markersize=6, label='Mean u(x)')
         ax1.set_xlabel('Grid Point')
-        ax1.set_ylabel('Mean μ(x)', color=color1, fontweight='bold')
+        ax1.set_ylabel('Mean u(x)', color=color1, fontweight='bold')
         ax1.tick_params(axis='y', labelcolor=color1)
         ax1.grid(True, alpha=0.3)
         ax1.set_ylim([min(means)*1.1, max(means)*1.1])  # Add some margin
@@ -1607,9 +1616,9 @@ class QuantumDiscreteGaussian:
         # Right y-axis for variance (red)
         ax1_twin = ax1.twinx()
         color2 = 'tab:red'
-        ax1_twin.plot(x_points, variances, color=color2, marker='s', linewidth=2, markersize=6, label='Variance T(x)')
+        ax1_twin.plot(x_points, variances, color=color2, marker='s', linewidth=2, markersize=6, label='Temperature T(x)')
         ax1_twin.axhline(y=self.T0, color='gray', linestyle='--', alpha=0.7, label=f'Base T₀={self.T0:.3f}')
-        ax1_twin.set_ylabel('Variance T(x)', color=color2, fontweight='bold')
+        ax1_twin.set_ylabel('Temperature T(x)', color=color2, fontweight='bold')
         ax1_twin.tick_params(axis='y', labelcolor=color2)
         ax1_twin.set_ylim([min(variances)*0.95, max(variances)*1.05])  # Add some margin
         
@@ -1689,11 +1698,11 @@ class QuantumDiscreteGaussian:
         
         # Plot mean comparison
         ax3.plot(x_points, means, 'b-o', linewidth=2.5, markersize=7, 
-                label='Input μ(x)', alpha=0.8)
+                label='Input u(x)', alpha=0.8)
         ax3.plot(x_points, recovered_means, 'r--s', linewidth=2, markersize=6, 
                 markerfacecolor='white', label='Recovered E[v]', alpha=0.9)
         ax3.set_xlabel('Grid Point')
-        ax3.set_ylabel('Mean Velocity')
+        ax3.set_ylabel('Mean Velocity u')
         ax3.set_title('Mean: Input vs Recovered from Quantum Moments', fontweight='bold')
         ax3.grid(True, alpha=0.3)
         ax3.legend(loc='best')
@@ -1767,9 +1776,9 @@ def main():
     # Display parameter setup
     means, variances = qdg.compute_parameters()
     print(f"Grid size: {qdg.grid_size}")
-    print(f"Base variance T₀: {qdg.T0}")
+    print(f"Base temperature T₀: {qdg.T0}")
     print(f"Mean range: [{means.min():.4f}, {means.max():.4f}]")
-    print(f"Variance range: [{variances.min():.4f}, {variances.max():.4f}]")
+    print(f"Temperature range: [{variances.min():.4f}, {variances.max():.4f}]")
     print(f"Outcomes: {qdg.outcomes}")
     print(f"Shots per point: {args.shots}")
     print()

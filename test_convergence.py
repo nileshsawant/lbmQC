@@ -28,7 +28,7 @@ def test_convergence():
     shot_counts = [1000, 2000, 5000, 10000, 20000, 50000]
     n_trials = 5  # Average over multiple trials
     
-    print(f"Test parameters: μx={mu_x}, μy={mu_y}, μz={mu_z}, T={T}")
+    print(f"Test parameters: mu_x={mu_x}, mu_y={mu_y}, mu_z={mu_z}, T={T}")
     print(f"Trials per shot count: {n_trials}")
     print()
     
