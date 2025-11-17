@@ -41,12 +41,21 @@ def test_convergence():
         'mean_error_x': [],
         'mean_error_y': [],
         'mean_error_z': [],
+        'mean_error_var_x': [],
+        'mean_error_var_y': [],
+        'mean_error_var_z': [],
         'std_error_x': [],
         'std_error_y': [],
         'std_error_z': [],
+        'std_error_var_x': [],
+        'std_error_var_y': [],
+        'std_error_var_z': [],
         'max_error_x': [],
         'max_error_y': [],
         'max_error_z': [],
+        'max_error_var_x': [],
+        'max_error_var_y': [],
+        'max_error_var_z': [],
     }
     
     print(f"{'Shots':>6s}  {'E[vx] err':>10s}  {'E[vy] err':>10s}  {'E[vz] err':>10s}  {'Expected σ':>10s}  {'Time (s)':>8s}")
@@ -58,6 +67,9 @@ def test_convergence():
         errors_x = []
         errors_y = []
         errors_z = []
+        errors_var_x = []
+        errors_var_y = []
+        errors_var_z = []
         
         start_time = time.time()
         
@@ -71,6 +83,9 @@ def test_convergence():
             errors_x.append(abs(moments['mean_x'] - moments_theory['mean_x']))
             errors_y.append(abs(moments['mean_y'] - moments_theory['mean_y']))
             errors_z.append(abs(moments['mean_z'] - moments_theory['mean_z']))
+            errors_var_x.append(abs(moments['var_x'] - moments_theory['var_x']))
+            errors_var_y.append(abs(moments['var_y'] - moments_theory['var_y']))
+            errors_var_z.append(abs(moments['var_z'] - moments_theory['var_z']))
         
         elapsed = time.time() - start_time
         
@@ -84,12 +99,22 @@ def test_convergence():
         results['mean_error_x'].append(mean_err_x)
         results['mean_error_y'].append(mean_err_y)
         results['mean_error_z'].append(mean_err_z)
+        # Mean errors for variances (temperature)
+        results['mean_error_var_x'].append(np.mean(errors_var_x))
+        results['mean_error_var_y'].append(np.mean(errors_var_y))
+        results['mean_error_var_z'].append(np.mean(errors_var_z))
         results['std_error_x'].append(np.std(errors_x))
         results['std_error_y'].append(np.std(errors_y))
         results['std_error_z'].append(np.std(errors_z))
+        results['std_error_var_x'].append(np.std(errors_var_x))
+        results['std_error_var_y'].append(np.std(errors_var_y))
+        results['std_error_var_z'].append(np.std(errors_var_z))
         results['max_error_x'].append(np.max(errors_x))
         results['max_error_y'].append(np.max(errors_y))
         results['max_error_z'].append(np.max(errors_z))
+        results['max_error_var_x'].append(np.max(errors_var_x))
+        results['max_error_var_y'].append(np.max(errors_var_y))
+        results['max_error_var_z'].append(np.max(errors_var_z))
         
         print(f"{shots:6d}  {mean_err_x:10.6f}  {mean_err_y:10.6f}  {mean_err_z:10.6f}  {expected_sigma:10.6f}  {elapsed:8.2f}")
     
@@ -152,6 +177,10 @@ def test_convergence():
     ax.loglog(results['shots'], results['mean_error_x'], 'o-', label='E[vx] error', linewidth=2)
     ax.loglog(results['shots'], results['mean_error_y'], 's-', label='E[vy] error', linewidth=2)
     ax.loglog(results['shots'], results['mean_error_z'], '^-', label='E[vz] error', linewidth=2)
+    # Plot temperature (variance) errors as dashed lighter markers
+    ax.loglog(results['shots'], results['mean_error_var_x'], 'o--', label='Var[vx] error', linewidth=1.5, alpha=0.8)
+    ax.loglog(results['shots'], results['mean_error_var_y'], 's--', label='Var[vy] error', linewidth=1.5, alpha=0.8)
+    ax.loglog(results['shots'], results['mean_error_var_z'], '^--', label='Var[vz] error', linewidth=1.5, alpha=0.8)
     
     # Theoretical 1/√N line
     theoretical_line = [1.0 / np.sqrt(n) for n in results['shots']]
@@ -168,6 +197,9 @@ def test_convergence():
     ax.plot(results['shots'], results['mean_error_x'], 'o-', label='E[vx] error', linewidth=2, markersize=8)
     ax.plot(results['shots'], results['mean_error_y'], 's-', label='E[vy] error', linewidth=2, markersize=8)
     ax.plot(results['shots'], results['mean_error_z'], '^-', label='E[vz] error', linewidth=2, markersize=8)
+    ax.plot(results['shots'], results['mean_error_var_x'], 'o--', label='Var[vx] error', linewidth=1.5, markersize=7, alpha=0.9)
+    ax.plot(results['shots'], results['mean_error_var_y'], 's--', label='Var[vy] error', linewidth=1.5, markersize=7, alpha=0.9)
+    ax.plot(results['shots'], results['mean_error_var_z'], '^--', label='Var[vz] error', linewidth=1.5, markersize=7, alpha=0.9)
     
     ax.axhline(y=0.01, color='orange', linestyle='--', alpha=0.5, label='0.01 threshold')
     ax.axhline(y=0.005, color='red', linestyle='--', alpha=0.5, label='0.005 threshold')
@@ -189,6 +221,8 @@ def test_convergence():
     print()
     print(f"• Errors follow 1/√N scaling as expected ✓")
     print(f"• At 1000 shots:  error ~{np.mean([results['mean_error_x'][0], results['mean_error_y'][0], results['mean_error_z'][0]]):.4f}")
+    print(f"• At 10000 shots: error ~{np.mean([results['mean_error_x'][3], results['mean_error_y'][3], results['mean_error_z'][3]]):.4f}")
+    print(f"• At 1000 shots (variance): temp error ~{np.mean([results['mean_error_var_x'][0], results['mean_error_var_y'][0], results['mean_error_var_z'][0]]):.4f}")
     print(f"• At 10000 shots: error ~{np.mean([results['mean_error_x'][3], results['mean_error_y'][3], results['mean_error_z'][3]]):.4f}")
     print(f"• At 50000 shots: error ~{np.mean([results['mean_error_x'][-1], results['mean_error_y'][-1], results['mean_error_z'][-1]]):.4f}")
     print()
