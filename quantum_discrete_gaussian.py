@@ -99,7 +99,7 @@ class QuantumDiscreteGaussian:
         
         # uz varies with z: flow in z-direction depends on z-position
         # Also add small x-variation for better visualization in 2D slices
-        means_z = 0.1 * np.sin(2 * np.pi * Z / Nz) + 0.02 * np.sin(2 * np.pi * X / Nx)
+        means_z = 0.02 * np.sin(2 * np.pi * Z / Nz) + 0.08 * np.sin(2 * np.pi * X / Nx)
         
         # Temperature varies with x (energy gradient in x-direction)
         temperatures = self.T0 + 0.05 * np.sin(2 * np.pi * X / Nx)
