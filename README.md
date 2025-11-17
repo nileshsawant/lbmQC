@@ -32,7 +32,7 @@ This module implements quantum computing algorithms for generating discrete Gaus
 - **Mean velocities**: 
   - ux(x) = 0.1 * sin(2π * x/Nx)
   - uy(y) = 0.1 * sin(2π * y/Ny)
-  - uz(z,x) = 0.1 * sin(2π * z/Nz) + 0.02 * sin(2π * x/Nx)
+  - uz(z,x) = 0.02 * sin(2π * z/Nz) + 0.08 * sin(2π * x/Nx)
 - **Temperature**: T(x) = T0 + 0.05 * sin(2π * x/Nx), where T0 = 1/3
 - **Velocity outcomes per dimension**: {-1, 0, 1}
 - **Total 3D velocity states**: 27 (D3Q27 lattice)
