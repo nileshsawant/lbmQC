@@ -216,6 +216,8 @@ python test_convergence.py
 
 This generates a convergence plot showing error vs shot count and validates the 1/sqrt(N) scaling law.
 
+![Convergence Analysis](convergence_analysis.png)
+
 ## Output
 
 ### 1D Mode
