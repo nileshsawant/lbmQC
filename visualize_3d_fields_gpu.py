@@ -37,6 +37,14 @@ def visualize_fields_gpu(Nx=10, Ny=6, Nz=4, slice_index=2, shots=3000, save_only
     print("3D QUANTUM LBM FIELD VISUALIZATION - GPU PARALLEL")
     print("=" * 70)
     print(f"\nGrid: {Nx} × {Ny} × {Nz} = {Nx*Ny*Nz} points")
+    # Clamp slice index into valid range to keep visualization running
+    if Nz <= 0:
+        raise ValueError("Nz must be positive for visualization")
+    requested_slice = slice_index
+    slice_index = min(max(slice_index, 0), Nz - 1)
+    if slice_index != requested_slice:
+        print(f"Requested z-slice {requested_slice} is out of range; using {slice_index} instead.")
+
     print(f"Visualizing z-slice: {slice_index} (of {Nz})")
     print(f"Shots per point: {shots}")
     print(f"Moment calculation: {'LBM-style (Σ fᵢ cᵢₓ)' if use_lbm_moments else 'Direct from samples'}")
@@ -130,8 +138,18 @@ def visualize_fields_gpu(Nx=10, Ny=6, Nz=4, slice_index=2, shots=3000, save_only
         counts = all_counts.get(circuit_name, {})
         
         velocity_counts = qdg._decode_quantum_counts_3d(counts)
+        total_shots = sum(velocity_counts.values())
 
-        if use_lbm_moments:
+        if total_shots == 0:
+            moments = {
+                'mean_x': 0.0,
+                'mean_y': 0.0,
+                'mean_z': 0.0,
+                'var_x': 0.0,
+                'var_y': 0.0,
+                'var_z': 0.0,
+            }
+        elif use_lbm_moments:
             probs_27 = qdg.convert_quantum_samples_to_lbm_order(velocity_counts)
             moments = qdg.compute_moments_lbm_style(probs_27)
         else:
