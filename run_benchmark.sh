@@ -36,6 +36,13 @@ echo "--- Running GPU Benchmark ---"
 time python visualize_3d_fields_gpu.py --Nx 10 --Ny 6 --Nz 4 --shots 40000 --save-only
 echo "--- GPU Benchmark Finished ---"
 echo
+echo
+
+# --- GPU Interface Benchmark ---
+echo "--- Running GPU Interface Benchmark ---"
+time python benchmark_interface.py --Nx 10 --Ny 6 --Nz 4 --shots 40000
+echo "--- GPU Interface Benchmark Finished ---"
+echo
 
 echo "Benchmark complete. Compare the 'real' time from the outputs above."
 echo "Also compare the 'STATISTICAL ANALYSIS' sections from each run."

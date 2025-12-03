@@ -824,7 +824,9 @@ class QuantumDiscreteGaussian:
         mu_y: float, 
         mu_z: float, 
         sigma_sq: float, 
-        shots: int = 1000
+        shots: int = 1000,
+        simulator: Optional[AerSimulator] = None,
+        pass_manager: Optional[object] = None
     ) -> Dict[Tuple[int, int, int], int]:
         """
         Execute quantum sampling for 3D velocity distribution at a single grid point.
@@ -843,6 +845,8 @@ class QuantumDiscreteGaussian:
         - mu_x, mu_y, mu_z: mean velocities μx, μy, μz (physically: ux, uy, uz)
         - sigma_sq: variance σ² (physically: temperature T, shared isotropic property)
         - shots: number of quantum circuit executions (sample size)
+        - simulator: (Optional) Pre-configured AerSimulator instance.
+        - pass_manager: (Optional) Pre-configured transpiler pass manager.
         
         OUTPUT:
         Dictionary mapping (vₓ, vᵧ, vᵧ) tuples to counts
@@ -855,8 +859,12 @@ class QuantumDiscreteGaussian:
         qc = self.create_quantum_circuit_3d_parametric(mu_x, mu_y, mu_z, sigma_sq)
         
         # STEP 2: Compile circuit for quantum simulator
-        simulator = AerSimulator()
-        pass_manager = generate_preset_pass_manager(1, simulator)
+        # Use provided instances if available, otherwise create new ones
+        if simulator is None:
+            simulator = AerSimulator()
+        if pass_manager is None:
+            pass_manager = generate_preset_pass_manager(1, simulator)
+        
         qc_compiled = pass_manager.run(qc)
         
         # STEP 3: Execute quantum circuit
