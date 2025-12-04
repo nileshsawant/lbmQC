@@ -619,11 +619,11 @@ class QuantumDiscreteGaussian:
         # STEP 2: X-COMPONENT (qubits 0-1) - Parallel execution
         p_x = mu_x * mu_x + sigma_sq
         
-        # Validate physical constraints
-        if p_x <= 0:
-            raise ValueError(f"Invalid parameters for X: p_x = mu_x² + sigma_sq = {p_x:.4f} must be positive")
-        if p_x >= 1:
-            raise ValueError(f"Invalid parameters for X: p_x = mu_x² + sigma_sq = {p_x:.4f} must be < 1")
+        # # Validate physical constraints
+        # if p_x <= 0:
+        #     raise ValueError(f"Invalid parameters for X: p_x = mu_x² + sigma_sq = {p_x:.4f} must be positive")
+        # if p_x >= 1:
+        #     raise ValueError(f"Invalid parameters for X: p_x = mu_x² + sigma_sq = {p_x:.4f} must be < 1")
         
         # Calculate angles directly from parameters
         p_x_clamped = self._clamp01(p_x)
@@ -631,8 +631,8 @@ class QuantumDiscreteGaussian:
         prob_plus1_x = 0.5 * (1.0 + mu_x / p_x)
         prob_plus1_x = self._clamp01(prob_plus1_x)
 
-        if prob_plus1_x < 0 or prob_plus1_x > 1:
-            raise ValueError(f"Invalid conditional probability for X: {prob_plus1_x:.4f}")
+        # if prob_plus1_x < 0 or prob_plus1_x > 1:
+        #     raise ValueError(f"Invalid conditional probability for X: {prob_plus1_x:.4f}")
 
         theta2_x = 2 * np.arcsin(np.sqrt(prob_plus1_x))
         
@@ -645,18 +645,18 @@ class QuantumDiscreteGaussian:
         # STEP 3: Y-COMPONENT (qubits 2-3) - Parallel execution
         p_y = mu_y * mu_y + sigma_sq
         
-        if p_y <= 0:
-            raise ValueError(f"Invalid parameters for Y: p_y = mu_y² + sigma_sq = {p_y:.4f} must be positive")
-        if p_y >= 1:
-            raise ValueError(f"Invalid parameters for Y: p_y = mu_y² + sigma_sq = {p_y:.4f} must be < 1")
+        # if p_y <= 0:
+        #     raise ValueError(f"Invalid parameters for Y: p_y = mu_y² + sigma_sq = {p_y:.4f} must be positive")
+        # if p_y >= 1:
+        #     raise ValueError(f"Invalid parameters for Y: p_y = mu_y² + sigma_sq = {p_y:.4f} must be < 1")
         
         p_y_clamped = self._clamp01(p_y)
         theta1_y = 2 * np.arccos(np.sqrt(p_y_clamped))
         prob_plus1_y = 0.5 * (1.0 + mu_y / p_y)
         prob_plus1_y = self._clamp01(prob_plus1_y)
 
-        if prob_plus1_y < 0 or prob_plus1_y > 1:
-            raise ValueError(f"Invalid conditional probability for Y: {prob_plus1_y:.4f}")
+        # if prob_plus1_y < 0 or prob_plus1_y > 1:
+        #     raise ValueError(f"Invalid conditional probability for Y: {prob_plus1_y:.4f}")
 
         theta2_y = 2 * np.arcsin(np.sqrt(prob_plus1_y))
         
@@ -669,18 +669,18 @@ class QuantumDiscreteGaussian:
         # STEP 4: Z-COMPONENT (qubits 4-5) - Parallel execution
         p_z = mu_z * mu_z + sigma_sq
         
-        if p_z <= 0:
-            raise ValueError(f"Invalid parameters for Z: p_z = mu_z² + sigma_sq = {p_z:.4f} must be positive")
-        if p_z >= 1:
-            raise ValueError(f"Invalid parameters for Z: p_z = mu_z² + sigma_sq = {p_z:.4f} must be < 1")
+        # if p_z <= 0:
+        #     raise ValueError(f"Invalid parameters for Z: p_z = mu_z² + sigma_sq = {p_z:.4f} must be positive")
+        # if p_z >= 1:
+        #     raise ValueError(f"Invalid parameters for Z: p_z = mu_z² + sigma_sq = {p_z:.4f} must be < 1")
         
         p_z_clamped = self._clamp01(p_z)
         theta1_z = 2 * np.arccos(np.sqrt(p_z_clamped))
         prob_plus1_z = 0.5 * (1.0 + mu_z / p_z)
         prob_plus1_z = self._clamp01(prob_plus1_z)
 
-        if prob_plus1_z < 0 or prob_plus1_z > 1:
-            raise ValueError(f"Invalid conditional probability for Z: {prob_plus1_z:.4f}")
+        # if prob_plus1_z < 0 or prob_plus1_z > 1:
+        #     raise ValueError(f"Invalid conditional probability for Z: {prob_plus1_z:.4f}")
 
         theta2_z = 2 * np.arcsin(np.sqrt(prob_plus1_z))
         

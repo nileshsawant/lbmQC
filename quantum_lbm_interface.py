@@ -12,7 +12,7 @@ from quantum_lbm_gpu_batch import QuantumLBMGPUBatch
 # Global instance to persist across calls
 _BATCH_PROCESSOR = None
 
-def quantumEqDistribution(ux, uy, uz, T, shots=1000):
+def quantumEqDistribution(ux, uy, uz, T, shots=10000):
     """
     Compute quantum equilibrium distribution probabilities.
     
@@ -53,12 +53,9 @@ def quantumEqDistribution(ux, uy, uz, T, shots=1000):
     Y_a_dummy = 1.0
     
     # Call the batch processor
-    # compute_quantum_feq returns a Host NumPy array
-    probs_cpu = _BATCH_PROCESSOR.compute_quantum_feq(
+    # compute_quantum_feq returns a CuPy array
+    probs_gpu = _BATCH_PROCESSOR.compute_quantum_feq(
         ux, uy, uz, T, rho_dummy, Y_a_dummy
     )
-    
-    # Convert back to CuPy for the notebook
-    probs_gpu = cp.asarray(probs_cpu)
     
     return probs_gpu
