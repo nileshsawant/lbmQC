@@ -12,9 +12,10 @@ import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 from qiskit import QuantumCircuit
+from qiskit.circuit import Parameter
 from qiskit_aer import AerSimulator
 from qiskit.transpiler.preset_passmanagers import generate_preset_pass_manager
-from typing import Tuple, Dict, Optional
+from typing import Tuple, Dict, Optional, List
 
 class QuantumDiscreteGaussian:
     def __init__(self, grid_size: int = 10, circuit_type: str = 'symmetric', 
@@ -478,10 +479,7 @@ class QuantumDiscreteGaussian:
 
                 SYMMETRIC DECOMPOSITION ANGLES:
                 - theta1 = 2*arccos(sqrt(p)) where p = mu**2 + sigma_sq
-                    This angle splits {-1,+1} (motion) vs {0} (rest)
-          
                 - theta2 = 2*arcsin(sqrt(0.5*(1 + mu/p)))
-                    This angle splits -1 vs +1 given motion
         
         ADVANTAGES:
         - No classical probability computation needed
@@ -605,7 +603,7 @@ class QuantumDiscreteGaussian:
         
         PARAMETERS:
         - mu_x, mu_y, mu_z: mean velocities μx, μy, μz (physically: ux, uy, uz)
-        - sigma_sq: variance σ² (physically: temperature T, same for all dimensions)
+        - sigma_sq: variance σ² (physically: temperature T, shared isotropic property)
         
         CONSTRAINT:
         - Requires sigma_sq < 1 and mu_i² + sigma_sq < 1 for all i ∈ {x,y,z}
@@ -697,6 +695,74 @@ class QuantumDiscreteGaussian:
         # CIRCUIT COMPLETE: 3D velocity sampling with hardware parallelization!
         return qc
     
+    def create_quantum_circuit_3d_parametric_template(self) -> Tuple[QuantumCircuit, List[Parameter]]:
+        """
+        Create a parameterized template circuit for 3D velocity sampling.
+        Returns the circuit and the list of parameters [theta1_x, theta2_x, theta1_y, theta2_y, theta1_z, theta2_z].
+        """
+        theta1_x = Parameter('theta1_x')
+        theta2_x = Parameter('theta2_x')
+        theta1_y = Parameter('theta1_y')
+        theta2_y = Parameter('theta2_y')
+        theta1_z = Parameter('theta1_z')
+        theta2_z = Parameter('theta2_z')
+        
+        qc = QuantumCircuit(6, 6)
+        
+        # X-component
+        qc.ry(theta1_x, 0)
+        qc.x(0)
+        # Decomposed CRY(theta2_x, 0, 1)
+        qc.ry(theta2_x/2, 1)
+        qc.cx(0, 1)
+        qc.ry(-theta2_x/2, 1)
+        qc.cx(0, 1)
+        qc.x(0)
+        
+        # Y-component
+        qc.ry(theta1_y, 2)
+        qc.x(2)
+        # Decomposed CRY(theta2_y, 2, 3)
+        qc.ry(theta2_y/2, 3)
+        qc.cx(2, 3)
+        qc.ry(-theta2_y/2, 3)
+        qc.cx(2, 3)
+        qc.x(2)
+        
+        # Z-component
+        qc.ry(theta1_z, 4)
+        qc.x(4)
+        # Decomposed CRY(theta2_z, 4, 5)
+        qc.ry(theta2_z/2, 5)
+        qc.cx(4, 5)
+        qc.ry(-theta2_z/2, 5)
+        qc.cx(4, 5)
+        qc.x(4)
+        
+        qc.measure(range(6), range(6))
+        
+        return qc, [theta1_x, theta2_x, theta1_y, theta2_y, theta1_z, theta2_z]
+    
+    def compute_angles(self, mu: float, sigma_sq: float) -> Tuple[float, float]:
+        """
+        Compute rotation angles theta1 and theta2 for a given mu and sigma_sq.
+        Used for preparing parameters for the template circuit.
+        """
+        p = mu * mu + sigma_sq
+        p_clamped = self._clamp01(p)
+        theta1 = 2 * np.arccos(np.sqrt(p_clamped))
+        
+        # Avoid division by zero if p is extremely small
+        if abs(p) < 1e-10:
+            prob_plus1 = 0.5
+        else:
+            prob_plus1 = 0.5 * (1.0 + mu / p)
+            
+        prob_plus1 = self._clamp01(prob_plus1)
+        theta2 = 2 * np.arcsin(np.sqrt(prob_plus1))
+        
+        return theta1, theta2
+
     def create_quantum_circuit(self, probs: np.ndarray) -> QuantumCircuit:
         """
         Create quantum circuit using the configured circuit type.
@@ -1301,8 +1367,7 @@ class QuantumDiscreteGaussian:
                 
                 # Z-component (qubits 4-5): leftmost 2 bits
                 qubit4 = bitstring[1]  # bit[4] in Qiskit ordering
-                qubit5 = bitstring[0]  # bit[5] in Qiskit ordering
-                
+                qubit5 = bitstring[0]  # bit[5] in Qiskit ordering                
                 if qubit4 == '0' and qubit5 == '0':
                     vz = -1
                 elif qubit4 == '0' and qubit5 == '1':
@@ -1594,7 +1659,7 @@ class QuantumDiscreteGaussian:
 
             print(f"Point {i}: μ={mu:.4f}, σ²={sigma_sq:.4f}")
             print(f"  Quantum:     P(-1)={probs_empirical[-1]:.3f}, P(0)={probs_empirical[0]:.3f}, P(1)={probs_empirical[1]:.3f}")
-            print(f"  Theoretical: P(-1)={theoretical[0]:.3f}, P(0)={theoretical[1]:.3f}, P(1)={theoretical[2]:.3f}")
+            print(f"  Theoretical: P(-1)={theoretical[0]:.3f}, P(0)={theoretical[1]:.3f}, P(+1)={theoretical[2]:.3f}")
 
             tv_distance = 0.5 * sum(
                 abs(probs_empirical[outcome] - theoretical[idx])
