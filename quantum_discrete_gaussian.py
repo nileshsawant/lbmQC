@@ -743,6 +743,33 @@ class QuantumDiscreteGaussian:
         
         return qc, [theta1_x, theta2_x, theta1_y, theta2_y, theta1_z, theta2_z]
     
+    def create_quantum_circuit_1d_parametric_template(self) -> Tuple[QuantumCircuit, List[Parameter]]:
+        """
+        Create a parameterized template circuit for 1D velocity sampling.
+        Returns the circuit and the list of parameters [theta1, theta2].
+        """
+        theta1 = Parameter('theta1')
+        theta2 = Parameter('theta2')
+        
+        qc = QuantumCircuit(2, 2)
+        
+        # First rotation
+        qc.ry(theta1, 0)
+        qc.x(0)
+        
+        # Decomposed CRY(theta2, 0, 1)
+        # Standard decomposition of controlled-Ry
+        qc.ry(theta2/2, 1)
+        qc.cx(0, 1)
+        qc.ry(-theta2/2, 1)
+        qc.cx(0, 1)
+        
+        qc.x(0)
+        
+        qc.measure(range(2), range(2))
+        
+        return qc, [theta1, theta2]
+    
     def compute_angles(self, mu: float, sigma_sq: float) -> Tuple[float, float]:
         """
         Compute rotation angles theta1 and theta2 for a given mu and sigma_sq.

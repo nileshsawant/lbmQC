@@ -12,7 +12,7 @@ from quantum_lbm_gpu_batch import QuantumLBMGPUBatch
 # Global instance to persist across calls
 _BATCH_PROCESSOR = None
 
-def quantumEqDistribution(ux, uy, uz, T, shots=1000, n_bins=200, batch_size=1000):
+def quantumEqDistribution(ux, uy, uz, T, shots=16000, n_bins=8001, batch_size=1001, enable_binning=True):
     """
     Compute quantum equilibrium distribution probabilities.
     
@@ -20,8 +20,9 @@ def quantumEqDistribution(ux, uy, uz, T, shots=1000, n_bins=200, batch_size=1000
         ux, uy, uz: Velocity components (CuPy arrays)
         T: Temperature (CuPy array)
         shots: Number of quantum shots (optional, passed to init if new)
-        n_bins: Number of bins for parameter quantization (default: 100)
-        batch_size: Number of circuits to run in parallel on GPU (default: 500)
+        n_bins: Number of bins for parameter quantization (default: 401)
+        batch_size: Number of circuits to run in parallel on GPU (default: 400)
+        enable_binning: Enable parameter binning for efficiency (default: True)
         
     Returns:
         probs: Probability distribution (CuPy array, shape [Nz, Ny, Nx, 27])
@@ -54,15 +55,19 @@ def quantumEqDistribution(ux, uy, uz, T, shots=1000, n_bins=200, batch_size=1000
         elif _BATCH_PROCESSOR.batch_size != batch_size:
             print(f"Re-initializing: batch_size changed {_BATCH_PROCESSOR.batch_size} -> {batch_size}")
             needs_init = True
+        elif _BATCH_PROCESSOR.enable_binning != enable_binning:
+            print(f"Re-initializing: enable_binning changed {_BATCH_PROCESSOR.enable_binning} -> {enable_binning}")
+            needs_init = True
             
     if needs_init:
-        print(f"Initializing QuantumLBMGPUBatch for grid {nx}x{ny}x{nz}, shots={shots}, bins={n_bins}, batch={batch_size}")
+        print(f"Initializing QuantumLBMGPUBatch for grid {nx}x{ny}x{nz}, shots={shots}, bins={n_bins}, batch={batch_size}, binning={enable_binning}")
         _BATCH_PROCESSOR = QuantumLBMGPUBatch(
             grid_shape=current_shape,
             n_bins=n_bins,
             shots_per_circuit=shots,
             use_gpu=True,
-            batch_size=batch_size
+            batch_size=batch_size,
+            enable_binning=enable_binning
         )
     
     # The notebook expects probabilities, but compute_quantum_feq calculates
