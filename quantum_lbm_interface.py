@@ -12,7 +12,7 @@ from quantum_lbm_gpu_batch import QuantumLBMGPUBatch
 # Global instance to persist across calls
 _BATCH_PROCESSOR = None
 
-def quantumEqDistribution(ux, uy, uz, T, shots=16000, n_bins=8001, batch_size=1001, enable_binning=True):
+def quantumEqDistribution(ux, uy, uz, T, shots=8000, n_bins=400001, batch_size=1001, enable_binning=True, tolerance=None, use_classical_sampling=False):
     """
     Compute quantum equilibrium distribution probabilities.
     
@@ -23,6 +23,8 @@ def quantumEqDistribution(ux, uy, uz, T, shots=16000, n_bins=8001, batch_size=10
         n_bins: Number of bins for parameter quantization (default: 401)
         batch_size: Number of circuits to run in parallel on GPU (default: 400)
         enable_binning: Enable parameter binning for efficiency (default: True)
+        tolerance: Absolute tolerance for binning (e.g. 1e-6). If set, overrides n_bins.
+        use_classical_sampling: If True, use classical random sampling (cupy.random.normal) instead of quantum circuits.
         
     Returns:
         probs: Probability distribution (CuPy array, shape [Nz, Ny, Nx, 27])
@@ -58,16 +60,24 @@ def quantumEqDistribution(ux, uy, uz, T, shots=16000, n_bins=8001, batch_size=10
         elif _BATCH_PROCESSOR.enable_binning != enable_binning:
             print(f"Re-initializing: enable_binning changed {_BATCH_PROCESSOR.enable_binning} -> {enable_binning}")
             needs_init = True
+        elif _BATCH_PROCESSOR.tolerance != tolerance:
+            print(f"Re-initializing: tolerance changed {_BATCH_PROCESSOR.tolerance} -> {tolerance}")
+            needs_init = True
+        elif getattr(_BATCH_PROCESSOR, 'use_classical_sampling', False) != use_classical_sampling:
+            print(f"Re-initializing: use_classical_sampling changed -> {use_classical_sampling}")
+            needs_init = True
             
     if needs_init:
-        print(f"Initializing QuantumLBMGPUBatch for grid {nx}x{ny}x{nz}, shots={shots}, bins={n_bins}, batch={batch_size}, binning={enable_binning}")
+        print(f"Initializing QuantumLBMGPUBatch for grid {nx}x{ny}x{nz}, shots={shots}, bins={n_bins}, batch={batch_size}, binning={enable_binning}, tolerance={tolerance}, classical={use_classical_sampling}")
         _BATCH_PROCESSOR = QuantumLBMGPUBatch(
             grid_shape=current_shape,
             n_bins=n_bins,
             shots_per_circuit=shots,
             use_gpu=True,
             batch_size=batch_size,
-            enable_binning=enable_binning
+            enable_binning=enable_binning,
+            tolerance=tolerance,
+            use_classical_sampling=use_classical_sampling
         )
     
     # The notebook expects probabilities, but compute_quantum_feq calculates

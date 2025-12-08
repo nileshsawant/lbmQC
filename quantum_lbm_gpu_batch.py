@@ -43,17 +43,21 @@ class QuantumLBMGPUBatch:
                  shots_per_circuit: int = 1000,
                  use_gpu: bool = True,
                  batch_size: int = 500,
-                 enable_binning: bool = True):
+                 enable_binning: bool = True,
+                 tolerance: float = None,
+                 use_classical_sampling: bool = False):
         """
         Initialize GPU batch processor.
         
         PARAMETERS:
         - grid_shape: (nZ, nY, nX)
-        - n_bins: Binning resolution (odd number recommended for symmetry)
+        - n_bins: Binning resolution (used if tolerance is None)
         - shots_per_circuit: Quantum shots per unique parameter set
         - use_gpu: Enable GPU acceleration
         - batch_size: Max circuits to run in single GPU batch
-        - enable_binning: If False, runs a unique circuit for every grid point (very slow)
+        - enable_binning: If False, runs a unique circuit for every grid point
+        - tolerance: Absolute tolerance for binning (e.g. 1e-6). Overrides n_bins if set.
+        - use_classical_sampling: If True, use classical random sampling instead of quantum circuits.
         """
         self.grid_shape = grid_shape
         self.nZ, self.nY, self.nX = grid_shape
@@ -61,6 +65,8 @@ class QuantumLBMGPUBatch:
         self.shots = shots_per_circuit
         self.batch_size = batch_size
         self.enable_binning = enable_binning
+        self.tolerance = tolerance
+        self.use_classical_sampling = use_classical_sampling
         
         # Initialize quantum discrete Gaussian
         self.qdg = QuantumDiscreteGaussian(
@@ -93,6 +99,7 @@ class QuantumLBMGPUBatch:
         print(f"  Batch size: {batch_size} circuits/GPU call")
         print(f"  GPU: {'Enabled' if self.use_gpu else 'Disabled'}")
         print(f"  Binning: {'Enabled' if self.enable_binning else 'Disabled'}")
+        print(f"  Classical Sampling: {'Enabled' if self.use_classical_sampling else 'Disabled'}")
     
     def _setup_gpu_simulator(self):
         """Setup Qiskit GPU simulator."""
@@ -164,40 +171,93 @@ class QuantumLBMGPUBatch:
             return bins, vmin, vmax
 
         # 2. Compute bins
-        # Use global min/max for u to ensure consistent quantization
-        b_u, min_u, max_u = get_bins(u_all, self.n_bins)
-        b_T, min_T, max_T = get_bins(T_all, self.n_bins)
+        if self.tolerance is not None:
+            # FIXED TOLERANCE STRATEGY
+            # Bin by rounding to nearest multiple of tolerance
+            # This is stable and does not jitter with min/max
+            print(f"  Using fixed tolerance: {self.tolerance}")
+            
+            # We use int64 for the bin indices to avoid overflow
+            # bin_idx = round(val / tol)
+            b_u = cp.round(u_all / self.tolerance).astype(cp.int64)
+            b_T = cp.round(T_all / self.tolerance).astype(cp.int64)
+            
+            # For packing, we need to shift to positive integers or use a tuple packing strategy
+            # Since we can't easily know the range of b_u/b_T ahead of time for packing,
+            # we'll use a different packing strategy: interleave bits or just use a large multiplier
+            # if we know the bounds.
+            
+            # Safer packing for arbitrary integers:
+            # We can't use the simple b_u + b_T * N trick because N is unknown/infinite.
+            # Instead, we can use a Cantor pairing or just rely on the fact that 
+            # we are on a GPU and can sort/unique 2 columns.
+            # But cp.unique with axis=0 is slow.
+            
+            # Let's use a large offset strategy, assuming values are within reasonable bounds.
+            # If tolerance is 1e-6, and values are +/- 1.0, indices are +/- 1,000,000.
+            # We can offset them to be positive.
+            
+            # Estimate range to ensure safe packing
+            min_u_idx = cp.min(b_u)
+            min_T_idx = cp.min(b_T)
+            
+            # Shift to zero-based
+            b_u_shifted = b_u - min_u_idx
+            b_T_shifted = b_T - min_T_idx
+            
+            # Determine multiplier needed
+            max_u_shifted = cp.max(b_u_shifted)
+            multiplier = max_u_shifted + 1
+            
+            packed_bins = b_u_shifted + b_T_shifted * multiplier
+            
+            # Store min/max for reporting
+            min_u, max_u = float(cp.min(u_all)), float(cp.max(u_all))
+            min_T, max_T = float(cp.min(T_all)), float(cp.max(T_all))
+            
+        else:
+            # N_BINS STRATEGY (Relative)
+            # Use global min/max for u to ensure consistent quantization
+            b_u, min_u, max_u = get_bins(u_all, self.n_bins)
+            b_T, min_T, max_T = get_bins(T_all, self.n_bins)
+            
+            # Pack bins into single integer
+            # packed = b_u + b_T * N
+            N = self.n_bins
+            # Cast to int64 to prevent overflow when N*N > 2^31
+            packed_bins = b_u.astype(cp.int64) + b_T.astype(cp.int64) * N
         
         print(f"  Parameter ranges:")
         print(f"    u: [{min_u:+.6f}, {max_u:+.6f}]")
         print(f"    T: [{min_T:+.6f}, {max_T:+.6f}]")
         
-        # 3. Pack bins into single integer
-        # packed = b_u + b_T * N
-        N = self.n_bins
-        packed_bins = b_u + b_T * N
-        
         # 4. Find unique bins
         unique_packed, inverse_indices = cp.unique(packed_bins, return_inverse=True)
         
-        # 5. Unpack unique bins
-        u_b_T = unique_packed // N
-        u_b_u = unique_packed % N
+        # 5. Compute centroids for each bin (Better accuracy than bin center)
+        # We use bincount to sum values in each bin, then divide by count
+        # This eliminates "grid jitter" noise by using the actual average of the data
         
-        # Convert to CPU
-        u_b_u = cp.asnumpy(u_b_u)
-        u_b_T = cp.asnumpy(u_b_T)
-        
-        def bin_to_val(b_idx, vmin, vmax, n_bins):
-            if vmax == vmin: return vmin
-            step = (vmax - vmin) / n_bins
-            return vmin + (b_idx + 0.5) * step
+        # Ensure inverse_indices is int32 for bincount
+        if inverse_indices.dtype != cp.int32:
+            inverse_indices = inverse_indices.astype(cp.int32)
             
-        params_list = []
-        for i in range(len(unique_packed)):
-            p_u = bin_to_val(u_b_u[i], min_u, max_u, N)
-            p_T = bin_to_val(u_b_T[i], min_T, max_T, N)
-            params_list.append((p_u, p_T))
+        # Count items per bin
+        counts = cp.bincount(inverse_indices, minlength=len(unique_packed))
+        
+        # Sum u and T per bin
+        sum_u = cp.bincount(inverse_indices, weights=u_all, minlength=len(unique_packed))
+        sum_T = cp.bincount(inverse_indices, weights=T_all, minlength=len(unique_packed))
+        
+        # Compute means
+        means_u = sum_u / counts
+        means_T = sum_T / counts
+        
+        # Convert to CPU for parameter list
+        means_u_cpu = cp.asnumpy(means_u)
+        means_T_cpu = cp.asnumpy(means_T)
+        
+        params_list = list(zip(means_u_cpu, means_T_cpu))
             
         elapsed = time.time() - start
         n_unique = len(params_list)
@@ -210,6 +270,88 @@ class QuantumLBMGPUBatch:
         
         return params_list, inverse_indices
     
+    def _run_classical_sampling_batched(self, params_list: List[Tuple]) -> np.ndarray:
+        """
+        Run classical sampling using cupy.random.normal to mimic shot noise.
+        
+        RETURNS:
+        - probs_array: NumPy array [n_unique, 3] (P(-1), P(0), P(1))
+        """
+        print("\nRunning Classical Sampling (cupy.random.normal)...")
+        start = time.time()
+        
+        n_unique = len(params_list)
+        probs_array = np.zeros((n_unique, 3), dtype=np.float64)
+        
+        # Convert params to arrays for vectorized sampling
+        # params_list is list of (u, T)
+        params_arr = np.array(params_list)
+        u_vec = cp.asarray(params_arr[:, 0])
+        T_vec = cp.asarray(params_arr[:, 1])
+        
+        # We process in chunks to avoid OOM if n_unique * shots is too large
+        # Each sample is float64 (8 bytes). 
+        # 1000 unique * 8000 shots * 8 bytes = 64 MB. Safe.
+        # But if n_unique is 180,000 and shots 32,000 -> 46 GB.
+        # Let's use a safe chunk size.
+        
+        chunk_size = 1000 # Process 1000 unique parameters at a time
+        n_chunks = (n_unique + chunk_size - 1) // chunk_size
+        
+        for i in range(n_chunks):
+            start_idx = i * chunk_size
+            end_idx = min(start_idx + chunk_size, n_unique)
+            
+            current_u = u_vec[start_idx:end_idx]
+            current_T = T_vec[start_idx:end_idx]
+            current_batch_size = end_idx - start_idx
+            
+            # Generate samples: N(u, sqrt(T))
+            # shape: (current_batch_size, shots)
+            # T is variance in some contexts, but usually T in physics. 
+            # Standard deviation is sqrt(T).
+            scale = cp.sqrt(current_T)
+            
+            # Generate samples
+            samples = cp.random.normal(loc=current_u[:, None], scale=scale[:, None], size=(current_batch_size, self.shots))
+            
+            # Discretize to {-1, 0, 1}
+            # We round to nearest integer
+            samples_rounded = cp.round(samples)
+            
+            # Clip to valid range [-1, 1]? 
+            # Or should we count outliers as lost?
+            # Standard D1Q3 is -1, 0, 1. 
+            # If we clip, we force outliers into the boundary bins.
+            # If we don't clip, we ignore them.
+            # Let's clip to be safe and conserve probability mass.
+            samples_clipped = cp.clip(samples_rounded, -1, 1)
+            
+            # Count occurrences
+            # We can use simple summation since values are -1, 0, 1
+            # count(-1) = sum(x == -1)
+            # count(0) = sum(x == 0)
+            # count(1) = sum(x == 1)
+            
+            c_neg = cp.sum(samples_clipped == -1, axis=1)
+            c_zero = cp.sum(samples_clipped == 0, axis=1)
+            c_pos = cp.sum(samples_clipped == 1, axis=1)
+            
+            # Normalize
+            total = self.shots # Since we clipped, all shots are counted
+            
+            probs_array[start_idx:end_idx, 0] = cp.asnumpy(c_neg / total)
+            probs_array[start_idx:end_idx, 1] = cp.asnumpy(c_zero / total)
+            probs_array[start_idx:end_idx, 2] = cp.asnumpy(c_pos / total)
+            
+            if (i + 1) % 10 == 0:
+                print(f"    Sampling chunk {i+1}/{n_chunks}...")
+                
+        total_time = time.time() - start
+        print(f"  Classical sampling complete: {total_time:.2f}s")
+        
+        return probs_array
+
     def _run_circuits_batched_1d(self, params_list: List[Tuple]) -> np.ndarray:
         """
         Run 1D quantum circuits in GPU-batched mode.
@@ -320,7 +462,10 @@ class QuantumLBMGPUBatch:
         
         # Step 2: Run 1D circuits
         # Returns [n_unique, 3]
-        unique_probs_1d_cpu = self._run_circuits_batched_1d(params_list)
+        if self.use_classical_sampling:
+            unique_probs_1d_cpu = self._run_classical_sampling_batched(params_list)
+        else:
+            unique_probs_1d_cpu = self._run_circuits_batched_1d(params_list)
         
         # Step 3: Reconstruct 3D distribution on GPU
         print("\nReconstructing 3D distribution on GPU...")
